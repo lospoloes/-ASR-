@@ -53,6 +53,21 @@ class TestAudio(unittest.TestCase):
         self.assertLess(abs(np.abs(z).max() - 0.5), 0.01)
 
 
+class TestVad(unittest.TestCase):
+    def test_two_segments(self):
+        if not registry.resolve_files(registry.get_spec("silero-vad")):
+            self.skipTest("未下载 silero-vad（python download_models.py --models silero-vad）")
+        # 用仓库里的 TTS 测试音频：语音 + 1s 静音 + 语音，应切出 2 段
+        d = Path(__file__).resolve().parents[1] / "benchmark" / "testset"
+        a, _ = asr_engine.read_wav((d / "s01_cmd.wav").read_bytes())
+        b, _ = asr_engine.read_wav((d / "s13_weather.wav").read_bytes())
+        x = np.concatenate([a, np.zeros(16000, np.float32), b])
+        segs = asr_engine.vad_segments(x)
+        self.assertEqual(len(segs), 2, segs)
+        self.assertLess(segs[0][1], len(a) / 16000 + 0.3)
+        self.assertGreater(segs[1][0], len(a) / 16000 + 0.5)
+
+
 class TestRegistry(unittest.TestCase):
     def test_specs(self):
         keys = [s["key"] for s in registry.all_specs()]

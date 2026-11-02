@@ -101,7 +101,12 @@ def _get_vad():
         return _vad
     import os
     import sherpa_onnx as so
-    p = VAD_PATH or os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "silero_vad.onnx")
+    # download_models.py 把模型放在 models/silero-vad/；兼容手动放在 models/silero_vad.onnx 的旧布局
+    p = VAD_PATH
+    if not p:
+        files = registry.resolve_files(registry.get_spec("silero-vad"))
+        legacy = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "silero_vad.onnx")
+        p = str(files["model"]) if files else legacy
     if not os.path.exists(p):
         _vad = False
         return _vad
@@ -217,8 +222,11 @@ class AsrModel:
             # VAD 模式：逐人声段识别（前后各扩 0.2s），记录时间戳
             pad = 0.2
             texts, cuts = [], []
-            for a, b in segs:
-                s0, s1 = max(0, int((a - pad) * sr)), min(len(samples), int((b + pad) * sr))
+            for i, (a, b) in enumerate(segs):
+                # 前后各扩最多 0.2s，但不越过与相邻段间隙的中点，避免相邻段重叠导致重复字
+                lo = a - pad if i == 0 else max(a - pad, (segs[i - 1][1] + a) / 2)
+                hi = b + pad if i == len(segs) - 1 else min(b + pad, (b + segs[i + 1][0]) / 2)
+                s0, s1 = max(0, int(lo * sr)), min(len(samples), int(hi * sr))
                 if s1 - s0 < sr // 5:
                     continue
                 res = self._offline_stream(r, sr, samples[s0:s1])

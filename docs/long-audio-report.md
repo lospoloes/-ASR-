@@ -1,10 +1,16 @@
-# 长音频实测报告与切段修复（2026-11-02）
+# 长音频实测报告：VAD 切段与音乐段幻听（2026-11-02）
 
-> 背景：用雷军 2022 年度演讲片段（[lei-jun-test.wav](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/lei-jun-test.wav)，**272.4s / 16kHz 单声道**）对 7 个模型做长音频横评，发现离线模型在长音频上严重劣化甚至崩溃，已修复并复测。机器：Windows x64 CPU，2 线程，sherpa-onnx。
+> 测试音频：**lei-jun-test.wav**（272.4s / 16kHz 单声道）— sherpa-onnx 官方 release 的测试文件，不纳入仓库：
+> ```bash
+> curl -L -o test_audio/lei-jun-test.wav \
+>   https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/lei-jun-test.wav
+> ```
+> 内容结构：**0–28.9s 纯音乐 + 掌声**，人声从 **28.93s** 开始（小米年度演讲开场）。
+> 机器：Windows x64 CPU，2 线程，sherpa-onnx。VAD：官方 `silero_vad.onnx`（643KB，v4）。
 
-## 1. 问题：离线模型整段送入长音频
+## 1. 问题一：离线模型整段送入长音频会劣化甚至崩溃
 
-第一轮（修复前，整段 272s 直送）：
+第一轮（整段 272s 直送，无切段）：
 
 | 模型 | 耗时 | RTF | 结果 |
 |---|---|---|---|
@@ -16,50 +22,84 @@
 | SenseVoice-Small（基准） | 47.8s | **0.1754** | ⚠️ 劣化 3.5 倍 |
 | **Dolphin base** | — | — | ❌ **崩溃**：`onnxruntime BroadcastIterator::Init axis 905 by 6809`（位置编码长度超限） |
 
-**根因**：离线非自回归模型的注意力是 O(n²)，音频越长每秒成本越高；Dolphin 的位置编码有最大长度限制。流式模型按 chunk 处理天然不受影响。
+**根因**：离线非自回归模型注意力为 O(n²)，音频越长每秒成本越高；Dolphin 位置编码有最大长度限制。流式模型按 chunk 处理，天然不受影响。
 
-## 2. 修复：离线模型自动切段（asr_engine.py）
+**修复**（`asr_engine.py`）：离线模型音频超过 31s 时自动切段推理（30s 窗口 + 1s 重叠，<0.5s 尾部碎段丢弃）；流式路径不变。Dolphin 不再崩溃，每个模型 RTF 回到短音频水平（完整数字见第 3 节）。
 
-- 音频 ≤ 31s：整段直送（原行为不变）
-- 音频 > 31s：按 **30s 窗口 + 1s 重叠**切段，逐段 `create_stream → accept_waveform → decode`，段文本直接拼接；<0.5s 尾部碎段丢弃
-- SenseVoice 的 lang/emotion/event 标签取各段属性并集
-- 改动集中在 `AsrModel._offline()`，新增 `_offline_stream()` 辅助，流式路径与分角色路径未动
+## 2. 问题二：音乐段的幻听（不是首字 bug）
 
-## 3. 修复后复测（同一音频，网页端重跑）
+⚠️ **更正**：第一版报告把"流式模型首字出现晚"写成了待修的 bug，这是错的。
 
-| 模型 | 耗时 | RTF | 对比修复前 |
+- `lei-jun-test.wav` 前 **28.9 秒是音乐和掌声**，第一段人声从 **28.93s** 开始（silero VAD 实测）。
+- 因此流式模型在 **29.4–29.7s** 出现首字是**正确行为**，不需要修。
+- 真正的问题是相反方向：**流式模型在纯音乐段就输出了字**（幻听）。
+
+| 模型 | 无 VAD 门控 | 首字时刻 | 判断 |
 |---|---|---|---|
-| **Paraformer-zh-small** | 4.4s | **0.016** | ⚡ 快 3.4 倍，回到短音频水平 |
-| Zipformer-CTC small 流式 | 6.2s | 0.0229 | 持平 |
-| Zipformer-zh-14M 流式 | 7.2s | 0.0265 | 持平 |
-| Zipformer 双语 small 流式 | 9.1s | 0.0331 | 持平 |
-| **Dolphin base** | 8.8s | **0.0321** | ✅ 不再崩溃，输出完整带标点 |
-| Zipformer-CTC multi-zh-hans | 21.9s | 0.0806 | 持平 |
-| SenseVoice-Small（基准） | — | ~0.06（页面确认中） | 恢复短音频水平 |
+| Zipformer-zh-14M | `什么朋友们晚上好…` | **10.4s** | ❌ 音乐段幻听（"什么"） |
+| Zipformer-CTC multi-zh-hans | `我朋友们晚上好…` | **0.5s** | ❌ 音乐段幻听（"我"） |
+| Zipformer-CTC small | `朋友们晚上好…` | 29.6s | ✅ 正常 |
+| Zipformer 双语 small | `朋友们晚上好…` | 29.6s | ✅ 正常 |
 
-## 4. 转写质量观察（272s 真实演讲）
+**修复**：流式也可加 VAD 门控（只喂人声段，间隙 <0.5s 合并）。开启后：
 
-- **SenseVoice**：唯一自带标点 + 阿拉伯数字 ITN（"1987年""130周年""3500人"）+ 情感/事件标签，文字最完整
-- **Dolphin**（切段后）：带标点和空格，可读性好
-- **流式 Zipformer**：丢标点，偶有开头丢字（"什么朋友们""我朋友们"），但速度最稳
-- **Paraformer**：切段后段间有轻微重复（"朋友们晚上朋友们晚上好"，来自 1s 重叠区），待做重叠去重
-- 分角色未在本轮测试（单人演讲）
+| 模型 | VAD 门控首字 | 文本开头 | 幻听 |
+|---|---|---|---|
+| Zipformer-zh-14M | **29.7s** | `朋友们晚上好…` | ✅ 消失 |
+| Zipformer-CTC multi-zh-hans | **29.4s** | `朋友们晚上好…` | ✅ 消失 |
+| Zipformer-CTC small | 29.7s | `朋友们晚上好…` | ✅ 无变化（本来正常） |
+| Zipformer 双语 small | 29.7s | `朋友们晚上好…` | ✅ 无变化 |
 
-## 5. 结论（对选型的影响）
+VAD 门控没有损害正常模型的首字延迟（29.6 → 29.7s），只剔除了音乐段。
 
-1. **端侧常驻场景必须 VAD/切段**——不是可选项。修复后 Paraformer/SenseVoice/Dolphin 的 RTF 才反映真实部署形态。
-2. 修复后长音频 RTF 排序：**Paraformer-zh-small（0.016，78MB）> Zipformer-CTC small（0.023，25MB）> zh-14M（0.027）> 双语 small（0.033）> Dolphin（0.032，99MB）> multi-zh-hans（0.081）**。
-3. 长音频结论不改变总选型：**主力转写仍是 Paraformer-zh-small int8**；流式 Zipformer 承担实时字幕/打断。
-4. 待办：拼接重叠去重（消除段间重复字）；用 VAD 切段替代固定窗口进一步提质。
+## 3. 问题三：段间重复字来自 1s 重叠区
 
-## 6. 复现
+第一版固定窗口切段（30s 窗口 + 1s 重叠）造成了文本重复，且重复**正好落在重叠区**：人声从 28.93s 开始，恰好位于「29–30s」这段重叠区间内，被前后两个窗口各识别一次。
 
-```bash
-# 下载测试音频（272s）
-curl -L -o test_audio/lei-jun-test.wav \
-  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/lei-jun-test.wav
-# 启动 demo，网页上传 test_audio/lei-jun-test.wav
-python server.py
-```
+| 模型 | 固定窗口切段（重复） | VAD 切段（无重复） |
+|---|---|---|
+| Paraformer-zh-small | `朋友们晚朋友们晚上好…` | `朋友们晚上好…` ✅ |
+| SenseVoice-Small | `朋友们。朋友们晚上好…` | `朋友们，晚上好…` ✅ |
+| Dolphin base | `朋友们晚朋友们晚上好…` | `朋友们晚上好…` ✅ |
 
-改动文件：`asr_engine.py`（离线切段推理）。详见 [selection.md](selection.md) 总选型报告。
+**结论：重复字确认来自重叠区，VAD 模式下完全消失。**
+
+## 4. 完整对比表（272.4s，VAD 切段 vs 整段/固定窗口）
+
+| 模型 | 流式 | 无 VAD RTF | **VAD RTF** | 首字（无 VAD → VAD） | 幻听 | 重复字 |
+|---|---|---|---|---|---|---|
+| **Paraformer-zh-small**（78MB） | 否 | 0.0129 | **0.0132** | — | — | ✅ 消失 |
+| Zipformer-zh-14M（29.5MB） | 是 | 0.0173 | **0.0153** | 10.4s → **29.7s** | ✅ 消失 | — |
+| Zipformer-CTC small（25.1MB） | 是 | 0.0220 | **0.0175** | 29.6s → 29.7s | 无 | — |
+| Zipformer 双语 small（57.4MB） | 是 | 0.0217 | **0.0172** | 29.6s → 29.7s | 无 | — |
+| Dolphin base（99.4MB） | 否 | 0.0283 | **0.0187** | — | — | ✅ 消失 |
+| Zipformer-CTC multi-zh-hans（253MB） | 是 | 0.0683 | **0.0452** | 0.5s → **29.4s** | ✅ 消失 | — |
+| SenseVoice-Small（228.5MB） | 否 | 0.0434 | **0.0331** | — | — | ✅ 消失 |
+
+VAD 切段对全部模型都有收益：离线模型 RTF 再降 15–35%（免去音乐段计算），流式模型降 20–35%（不处理非人声）。VAD 本身开销很小（272s 音频约 0.3s）。
+
+> 表中数字取 `python benchmark_vad.py` 的单次运行，x86 CPU 2 线程下 RTF 波动约 ±0.002，横向比较可看，绝对值以目标芯片实测为准。
+
+## 5. 实现细节与坑
+
+1. **VAD 必须按 `window_size`（512 采样 / 32ms）精确分块**喂入。用 100ms 块喂会导致段列表错乱（实测全部段 start 相同、samples 为空）。
+2. **SpeechSegment 只有 `.start`（采样点）和 `.samples`**，没有 `.end`；结束时刻 = `(start + len(samples)) / sr`。
+3. **必须用官方 `silero_vad.onnx`（643KB）**。ModelScope 上的 2.3MB 版本（疑似 v5 变体）在本机 VAD 判定明显偏保守：同一音频第一段人声被判到 **47.01s**，导致开头 18 秒真实语音被丢弃；官方 v4 版正确判为 **28.93s**。
+4. VAD 参数：`threshold=0.5, min_silence_duration=0.25, min_speech_duration=0.25`；段前后各扩 0.2s 送 ASR。
+
+## 6. 结论
+
+1. **端侧常驻场景必须配 VAD**——不只是为了切段控 RTF，更是为了消除音乐/噪声段的幻听。两件事一次解决。
+2. 用 VAD 切段后，长音频 RTF 排序：**Paraformer-zh-small（0.0132，78MB）< Zipformer-zh-14M（0.0153，29.5MB）< Zipformer 双语 small（0.0172）≈ Zipformer-CTC small（0.0175）< Dolphin（0.0187）< SenseVoice（0.0331）< multi-zh-hans（0.0452）**。
+3. 总选型结论不变：**主力转写仍是 Paraformer-zh-small int8**（最快 + 离线 + 准确）；流式 Zipformer 承担实时字幕/打断，且应加 VAD 门控。
+4. 待办：VAD 段可再按语义合并（当前间隙 >0.5s 就切，短句会被切碎）；分角色场景下 VAD + 声纹聚类的增量方案仍需在目标芯片实测。
+
+## 7. 改动文件
+
+- `asr_engine.py`
+  - `vad_segments()`：silero VAD 人声段检测（按 window_size 分块）
+  - `AsrModel._offline()`：VAD 切段优先，无 VAD 时退回固定窗口，短音频整段直送
+  - `AsrModel._online()`：可选 VAD 门控（`use_vad`）
+- 未提交 `test_audio/`（测试音频按官方 release 地址下载）
+
+详见总选型报告 [selection.md](selection.md)。

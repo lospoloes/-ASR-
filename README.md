@@ -3,6 +3,7 @@
 用于陪伴机器人端侧 ASR 选型。项目用 sherpa-onnx 在本地 CPU 上同时加载 7 个小体积模型。网页上按住空格说一句话，**所有模型会转写同一段音频**，同一个页面里能看到各模型的结果、耗时、RTF、CER、参数和需求对照。
 
 - 选型调研、实测数据和推荐结论：**[docs/selection.md](docs/selection.md)**
+- 长音频实测、VAD 切段与音乐段幻听：**[docs/long-audio-report.md](docs/long-audio-report.md)**
 - 支持分角色（说话人分离）、流式模型的逐步输出、批量 benchmark，以及用 TTS 生成带标准答案的测试集
 
 ## 快速开始
@@ -77,7 +78,14 @@ python download_models.py --tts      # 只有重新生成测试集时才需要
 python make_test_audio.py            # 用 TTS 生成 benchmark/testset/（仓库里已经有一份）
 python benchmark.py                  # 所有已下载模型 × 测试集，输出 benchmark/results/<时间>.md 和 .csv
 python benchmark.py --dir D:\my_wavs --threads 1   # 用自己的真人录音测，目录里放 refs.tsv（文件名<TAB>参考文本）
+
+# 长音频：VAD 切段 vs 整段对比（需要先下载 silero_vad.onnx）
+curl -L -o test_audio/lei-jun-test.wav \
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/lei-jun-test.wav
+python benchmark_vad.py test_audio/lei-jun-test.wav
 ```
+
+**长音频必须配 VAD**：离线模型音频超过 31s 时会自动按 VAD 人声段切段推理（没有 VAD 模型时退回 30s 固定窗口切段），见 [docs/long-audio-report.md](docs/long-audio-report.md)。
 
 ## 常用参数
 
@@ -94,12 +102,14 @@ python -m unittest discover -s tests          # 单元测试（不需要模型�
 |---|---|
 | `registry.py` | 模型注册表：下载地址、文件匹配规则、文档体积和出处、公开 CER、许可证 |
 | `download_models.py` | 下载模型：HF 优先，失败回退 GitHub；必要时自动做 int8 量化 |
-| `asr_engine.py` | sherpa-onnx 加载和推理（离线 / 流式 / 说话人分离），以及 CER 和数字归一化 |
+| `asr_engine.py` | sherpa-onnx 加载和推理（离线 / 流式 / 说话人分离 / VAD 切段），以及 CER 和数字归一化 |
 | `server.py` | FastAPI 后端，提供 `/api/models` 和 `/api/transcribe` |
 | `web/index.html` | 前端页面（单文件，没有外部依赖） |
 | `make_test_audio.py` / `benchmark.py` | 生成测试集 / 批量评测 |
+| `benchmark_vad.py` | 长音频 VAD 切段 vs 整段的对比测评 |
 | `benchmark/` | 测试句、TTS 生成的测试音频、评测结果 |
 | `docs/selection.md` | 选型调研报告 |
+| `docs/long-audio-report.md` | 长音频实测、VAD 切段、音乐段幻听分析 |
 
 ## 常见问题
 

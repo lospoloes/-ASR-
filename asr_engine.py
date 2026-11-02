@@ -12,6 +12,7 @@ import numpy as np
 import registry
 
 SAMPLE_RATE = 16000
+VAD_PATH = None  # 由 server/asr_engine 初始化时探测；指向 silero_vad.onnx
 
 
 # ---------------------------------------------------------------- 音频工具
@@ -90,6 +91,53 @@ def arabic_to_zh(text: str) -> str:
     return re.sub(r"(\d+)(?:\.(\d+))?", rep, text)
 
 
+# ---------------------------------------------------------------- VAD
+_vad = None
+
+def _get_vad():
+    """加载 silero VAD（懒加载，找不到模型文件返回 None）。"""
+    global _vad
+    if _vad is not None:
+        return _vad
+    import os
+    import sherpa_onnx as so
+    p = VAD_PATH or os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "silero_vad.onnx")
+    if not os.path.exists(p):
+        _vad = False
+        return _vad
+    cfg = so.VadModelConfig()
+    cfg.silero_vad.model = p
+    cfg.silero_vad.threshold = 0.5
+    cfg.silero_vad.min_silence_duration = 0.25
+    cfg.silero_vad.min_speech_duration = 0.25
+    cfg.sample_rate = SAMPLE_RATE
+    _vad = so.VoiceActivityDetector(cfg, buffer_size_in_seconds=60)
+    return _vad
+
+def vad_segments(samples: np.ndarray, sr: int = SAMPLE_RATE) -> list[tuple[float, float]]:
+    """返回 [(start_sec, end_sec), ...] 人声段；VAD 不可用时返回 []。"""
+    v = _get_vad()
+    if not v:
+        return []
+    v.reset()
+    cfg = v.config
+    ws = cfg.silero_vad.window_size  # silero 要求按 512 采样（32ms）精确分块
+    segs = []
+    for i in range(0, len(samples) - ws + 1, ws):
+        v.accept_waveform(samples[i:i + ws])
+        while not v.empty():
+            seg = v.front
+            segs.append((seg.start / sr, (seg.start + len(seg.samples)) / sr))
+            v.pop()
+    v.flush()
+    while not v.empty():
+        seg = v.front
+        segs.append((seg.start / sr, (seg.start + len(seg.samples)) / sr))
+        v.pop()
+    v.reset()
+    return segs
+
+
 def normalize_text(s: str, norm_numbers: bool = False) -> str:
     s = unicodedata.normalize("NFKC", s)
     if norm_numbers:
@@ -157,15 +205,34 @@ class AsrModel:
         self.recognizer = r
         self.load_seconds = time.perf_counter() - t0
 
-    # 离线：长音频按固定窗口切段推理（避免 O(n²) 注意力劣化 / 位置编码超限），短音频整段直送
-    CHUNK_SEC = 30.0      # 每段时长
-    CHUNK_OVERLAP = 1.0   # 段间重叠，避免切在字中间
+    # 离线：优先 VAD 切段（人声段，避免音乐段幻听 + 消除重叠重复字），无 VAD 时按固定窗口切段
+    CHUNK_SEC = 30.0      # 每段时长（固定窗口模式）
+    CHUNK_OVERLAP = 1.0   # 段间重叠（固定窗口模式）
 
-    def _offline(self, samples: np.ndarray, sr: int) -> dict:
+    def _offline(self, samples: np.ndarray, sr: int, use_vad: bool = True) -> dict:
         r = self.recognizer
         dur = len(samples) / sr
+        segs = vad_segments(samples, sr) if use_vad else []
+        if segs:
+            # VAD 模式：逐人声段识别（前后各扩 0.2s），记录时间戳
+            pad = 0.2
+            texts, cuts = [], []
+            for a, b in segs:
+                s0, s1 = max(0, int((a - pad) * sr)), min(len(samples), int((b + pad) * sr))
+                if s1 - s0 < sr // 5:
+                    continue
+                res = self._offline_stream(r, sr, samples[s0:s1])
+                if res["text"]:
+                    texts.append(res["text"])
+                    cuts.append({"start": round(a, 2), "end": round(b, 2)})
+            out = {"text": "".join(texts), "vad": True, "n_segments": len(cuts), "cuts": cuts}
+            for k in ("lang", "emotion", "event"):
+                if texts and k in res:
+                    out[k] = res[k]
+            return out
         if dur <= self.CHUNK_SEC + self.CHUNK_OVERLAP:
             return self._offline_stream(r, sr, samples)
+        # 固定窗口模式（无 VAD）
         step = int(sr * (self.CHUNK_SEC - self.CHUNK_OVERLAP))
         win = int(sr * self.CHUNK_SEC)
         texts = []
@@ -180,7 +247,7 @@ class AsrModel:
             for k in ("lang", "emotion", "event"):
                 if k in res:
                     attrs[k] = res[k]
-        out = {"text": "".join(texts)}
+        out = {"text": "".join(texts), "vad": False}
         out.update(attrs)
         return out
 
@@ -197,8 +264,9 @@ class AsrModel:
                 out[attr] = v
         return out
 
-    # 流式：按 100ms 小块喂入，模拟实时场景，记录首字出现的音频时刻
-    def _online(self, samples: np.ndarray, sr: int, chunk_sec: float = 0.1) -> dict:
+    # 流式：按 100ms 小块喂入，模拟实时场景，记录首字出现的音频时刻；
+    # use_vad=True 时用 VAD 门控（只喂人声区，避免音乐段幻听）
+    def _online(self, samples: np.ndarray, sr: int, chunk_sec: float = 0.1, use_vad: bool = True) -> dict:
         r = self.recognizer
         s = r.create_stream()
         step = int(sr * chunk_sec)
@@ -206,7 +274,26 @@ class AsrModel:
         partials = []
         last = ""
         chunk_costs = []
+        # VAD 门控：把人声段合并（间隙 <0.5s 视为连续），只喂人声区
+        gate = None
+        if use_vad:
+            segs = vad_segments(samples, sr)
+            if segs:
+                merged = []
+                for a, b in segs:
+                    if merged and a - merged[-1][1] < 0.5:
+                        merged[-1][1] = b
+                    else:
+                        merged.append([a, b])
+                gate = merged
+        gate_i = 0
         for start in range(0, len(samples), step):
+            t = (start + step) / sr
+            if gate is not None:
+                while gate_i < len(gate) and t > gate[gate_i][1]:
+                    gate_i += 1
+                if gate_i >= len(gate) or t < gate[gate_i][0]:
+                    continue  # 非人声区，不喂
             c0 = time.perf_counter()
             s.accept_waveform(sr, samples[start:start + step])
             while r.is_ready(s):
@@ -230,12 +317,14 @@ class AsrModel:
             "partials": partials[-30:],
             "chunk_ms_avg": round(1000 * float(np.mean(chunk_costs)), 2) if chunk_costs else None,
             "chunk_ms_max": round(1000 * float(np.max(chunk_costs)), 2) if chunk_costs else None,
+            "vad": gate is not None,
         }
 
-    def transcribe(self, samples: np.ndarray, sr: int = SAMPLE_RATE) -> dict:
+    def transcribe(self, samples: np.ndarray, sr: int = SAMPLE_RATE, use_vad: bool = True) -> dict:
         dur = len(samples) / sr
         t0 = time.perf_counter()
-        out = self._online(samples, sr) if self.spec["streaming"] else self._offline(samples, sr)
+        out = (self._online(samples, sr, use_vad=use_vad) if self.spec["streaming"]
+               else self._offline(samples, sr, use_vad=use_vad))
         elapsed = time.perf_counter() - t0
         out.update({
             "key": self.key,

@@ -258,8 +258,24 @@ TTS_MODELS: list[dict] = [
 ]
 
 
+# VAD：长音频切段 / 流式门控（离线模型长音频必须配 VAD，见 docs/long-audio-report.md）
+VAD_MODELS: list[dict] = [
+    {
+        "key": "silero-vad",
+        "name": "Silero VAD（人声检测）",
+        "files": {"model": ["silero_vad.onnx"]},
+        "hf_repo": "csukuangfj/silero-vad",
+        "hf_verified": False,
+        "hf_allow": ["silero_vad.onnx"],
+        "gh_url": f"{GH}/asr-models/silero_vad.onnx",
+        "doc_size_mb": 0.6,
+        "size_source": "实测 643KB（必须是官方 v4 版；ModelScope 的 2.3MB 变体判定过保守，会把掌声下的人声判丢）",
+    },
+]
+
+
 def all_specs() -> list[dict]:
-    return ASR_MODELS + DIARIZATION_MODELS + TTS_MODELS
+    return ASR_MODELS + DIARIZATION_MODELS + TTS_MODELS + VAD_MODELS
 
 
 def get_spec(key: str) -> dict:

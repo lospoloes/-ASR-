@@ -172,6 +172,8 @@ def main():
             log(f"{s['key']:30} {'是':4} {'-':4} {str(s['doc_size_mb']):>10}  {s['name']}（分角色）")
         for s in registry.TTS_MODELS:
             log(f"{s['key']:30} {'否':4} {'-':4} {str(s['doc_size_mb']):>10}  {s['name']}（--tts）")
+        for s in registry.VAD_MODELS:
+            log(f"{s['key']:30} {'是':4} {'-':4} {str(s['doc_size_mb']):>10}  {s['name']}（长音频切段）")
         return 0
 
     if args.all:
@@ -183,6 +185,7 @@ def main():
         specs = [s for s in registry.ASR_MODELS if s["default"]]
     if not args.no_diarization:
         specs += [s for s in registry.DIARIZATION_MODELS if s not in specs]
+    specs += [s for s in registry.VAD_MODELS if s not in specs]
     if args.tts:
         specs += [s for s in registry.TTS_MODELS if s not in specs]
 

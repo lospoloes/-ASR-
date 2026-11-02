@@ -79,6 +79,7 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
       <span class="meter"><i id="lvl"></i></span>
       <label title="把 9点/123000 等阿拉伯数字转成汉字读法再算 CER，避免 ITN 输出被误判"><input type="checkbox" id="normnum" checked> 数字归一化</label>
       <label><input type="checkbox" id="diar"> 分角色（说话人分离）</label>
+      <label title="用人声检测切段：长音频提速，且能消除音乐/噪声段的幻听。流式模型开启后只喂人声区"><input type="checkbox" id="vad" checked> VAD 切段</label>
       <label>人数 <select id="nspk"><option value="-1">自动</option><option>2</option><option>3</option><option>4</option></select></label>
       <label class="btn">上传 WAV<input type="file" id="file" accept=".wav,audio/wav" hidden></label>
       <button class="s" id="replay" disabled>▶ 回放</button>
@@ -186,7 +187,7 @@ async function send(wav){
   busy = true; const btn = $('#talk'); btn.disabled = true; btn.textContent = '识别中…';
   ['#replay','#again','#dl'].forEach(s => $(s).disabled = false);
   const ref = $('#ref').value.trim();
-  const qs = new URLSearchParams({ref, diarize: $('#diar').checked ? 1 : 0, num_speakers: $('#nspk').value, norm_num: $('#normnum').checked ? 1 : 0});
+  const qs = new URLSearchParams({ref, diarize: $('#diar').checked ? 1 : 0, num_speakers: $('#nspk').value, norm_num: $('#normnum').checked ? 1 : 0, vad: $('#vad').checked ? 1 : 0});
   $('#msg').textContent = '';
   try{
     const r = await fetch('/api/transcribe?' + qs, {method:'POST', body: wav, headers:{'Content-Type':'audio/wav'}});

@@ -108,7 +108,7 @@ def _diar_asr_model():
 
 @app.post("/api/transcribe")
 async def api_transcribe(request: Request, ref: str = "", diarize: int = 0, num_speakers: int = -1,
-                         threshold: float = 0.5, norm_num: int = 1):
+                         threshold: float = 0.5, norm_num: int = 1, vad: int = 1):
     data = await request.body()
     if not data:
         raise HTTPException(400, "空音频")
@@ -122,18 +122,18 @@ async def api_transcribe(request: Request, ref: str = "", diarize: int = 0, num_
     if duration < 0.2:
         raise HTTPException(400, "录音太短（<0.2s）")
     results, diar = await run_in_threadpool(_run_all, samples, sr, ref, diarize, num_speakers, threshold,
-                                            bool(norm_num))
+                                            bool(norm_num), bool(vad))
     return JSONResponse({"duration": round(duration, 3), "results": results, "diarization": diar,
-                         "ref": ref, "time": time.strftime("%H:%M:%S")})
+                         "ref": ref, "vad": bool(vad), "time": time.strftime("%H:%M:%S")})
 
 
 def _run_all(samples: np.ndarray, sr: int, ref: str, diarize: int, num_speakers: int, threshold: float,
-             norm_num: bool):
+             norm_num: bool, use_vad: bool = True):
     results = []
     with LOCK:
         for key, m in STATE["models"].items():
             try:
-                r = m.transcribe(samples, sr)
+                r = m.transcribe(samples, sr, use_vad=use_vad)
                 if ref.strip():
                     c = asr_engine.cer(ref, r["text"], norm_num)
                     r["cer"] = None if c is None else round(c, 4)

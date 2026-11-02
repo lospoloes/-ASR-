@@ -12,3 +12,9 @@ venv/
 # 系统
 .DS_Store
 Thumbs.db
+
+# 本地临时文件（下载重试、测试音频）
+test_audio/
+retry_loop.*
+download_retry*.log
+bench_vad.json

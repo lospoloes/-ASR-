@@ -157,9 +157,34 @@ class AsrModel:
         self.recognizer = r
         self.load_seconds = time.perf_counter() - t0
 
-    # 离线：整段送入
+    # 离线：长音频按固定窗口切段推理（避免 O(n²) 注意力劣化 / 位置编码超限），短音频整段直送
+    CHUNK_SEC = 30.0      # 每段时长
+    CHUNK_OVERLAP = 1.0   # 段间重叠，避免切在字中间
+
     def _offline(self, samples: np.ndarray, sr: int) -> dict:
         r = self.recognizer
+        dur = len(samples) / sr
+        if dur <= self.CHUNK_SEC + self.CHUNK_OVERLAP:
+            return self._offline_stream(r, sr, samples)
+        step = int(sr * (self.CHUNK_SEC - self.CHUNK_OVERLAP))
+        win = int(sr * self.CHUNK_SEC)
+        texts = []
+        attrs = {}
+        for start in range(0, len(samples), step):
+            seg = samples[start:start + win]
+            if len(seg) < sr // 2:  # 丢弃 <0.5s 的尾部碎段
+                break
+            res = self._offline_stream(r, sr, seg)
+            if res["text"]:
+                texts.append(res["text"])
+            for k in ("lang", "emotion", "event"):
+                if k in res:
+                    attrs[k] = res[k]
+        out = {"text": "".join(texts)}
+        out.update(attrs)
+        return out
+
+    def _offline_stream(self, r, sr: int, samples: np.ndarray) -> dict:
         s = r.create_stream()
         s.accept_waveform(sr, samples)
         r.decode_stream(s)

@@ -1,0 +1,21 @@
+# id	tts	sid	text（陪伴机器人场景测试句；tts=aishell3 时 sid 为 0~173 的音色编号，melo 只有一个音色）
+s01_cmd	aishell3	10	小智，帮我把客厅的灯关掉。
+s02_reminder	aishell3	33	明天早上七点半提醒我吃药。
+s03_time	aishell3	99	下午三点十五分记得去幼儿园接孩子。
+s04_number	aishell3	10	我这个月一共走了十二万三千步。
+s05_phone	aishell3	45	请帮我拨打幺三八零零一三八零零零。
+s06_date	aishell3	60	二零二六年十月二十九日我们开了一个会。
+s07_long	aishell3	99	今天天气不错，我们吃完午饭以后一起去公园散散步，顺便买点水果回来好不好？
+s08_chat	aishell3	120	你知道为什么天空是蓝色的吗？我一直想不明白。
+s09_emotion	aishell3	33	哎呀，我今天真的好累啊，工作太多了。
+s10_story	aishell3	60	给我讲一个关于小兔子和大灰狼的故事吧。
+s11_interrupt	aishell3	45	等一下，先别说了，刚才那个问题再说一遍。
+s12_names	aishell3	120	帮我给王小明和李华发消息，说晚上的聚会改到八点。
+s13_weather	aishell3	10	明天北京会下雨吗？温度大概多少度？
+s14_music	aishell3	99	播放一首周杰伦的歌，音量调到百分之三十。
+s15_mix	melo	0	帮我打开 Bluetooth，然后连接我的 iPhone。
+s16_mix	melo	0	这个 project 的 deadline 是下周五。
+s17_mix	melo	0	今天的 meeting 改到下午两点。
+s18_calc	aishell3	33	三百六十五乘以二十四等于多少？
+s19_cook	aishell3	60	红烧肉要炖多久才好吃？
+s20_goodnight	aishell3	120	好了，我要睡觉了，晚安。

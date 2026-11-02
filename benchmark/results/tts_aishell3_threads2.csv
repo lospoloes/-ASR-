@@ -1,0 +1,141 @@
+﻿model,file,ref,hyp,cer,rtf
+sensevoice,s01_cmd.wav,小智，帮我把客厅的灯关掉。,小智帮我把客厅的灯关掉。,0.0000,0.0716
+sensevoice,s02_reminder.wav,明天早上七点半提醒我吃药。,明天早上7点半提醒我吃药。,0.0000,0.0562
+sensevoice,s03_time.wav,下午三点十五分记得去幼儿园接孩子。,下午3点15分记得去幼儿园见海。,0.1875,0.0563
+sensevoice,s04_number.wav,我这个月一共走了十二万三千步。,我这个月一共走了10万万千千股。,0.2143,0.0561
+sensevoice,s05_phone.wav,请帮我拨打幺三八零零一三八零零零。,请帮我拨打13800138000。,0.0000,0.0552
+sensevoice,s06_date.wav,二零二六年十月二十九日我们开了一个会。,2026年10月29日，我们参加一度会。,0.1667,0.0556
+sensevoice,s07_long.wav,今天天气不错，我们吃完午饭以后一起去公园散散步，顺便买点水果回来好不好？,今天惊洗不错，我们吃完午饭，以后就起去公园饭散不顺间逮点这果回来好了？,0.3030,0.0545
+sensevoice,s08_chat.wav,你知道为什么天空是蓝色的吗？我一直想不明白。,你知道为什么天空是蓝色的吗？我一直想透明白。,0.0500,0.0547
+sensevoice,s09_emotion.wav,哎呀，我今天真的好累啊，工作太多了。,哎呀，我今天真的好累啊，工作太多了。,0.0000,0.0611
+sensevoice,s10_story.wav,给我讲一个关于小兔子和大灰狼的故事吧。,给我讲一个关于小兔子和大灰狼的故事吧。,0.0000,0.0613
+sensevoice,s11_interrupt.wav,等一下，先别说了，刚才那个问题再说一遍。,等一下，先结束了刚才那个问题再说一遍。,0.1176,0.0625
+sensevoice,s12_names.wav,帮我给王小明和李华发消息，说晚上的聚会改到八点。,帮午给王晓明和李煌发消息说，晚上的聚会在上8点。,0.2273,0.0574
+sensevoice,s13_weather.wav,明天北京会下雨吗？温度大概多少度？,明天北京会下雨吗？温度大在多少度？,0.0667,0.0563
+sensevoice,s14_music.wav,播放一首周杰伦的歌，音量调到百分之三十。,播放一首周杰伦的歌，音量调到30%。,0.0000,0.0625
+sensevoice,s15_mix.wav,帮我打开 Bluetooth，然后连接我的 iPhone。,帮我打开B teach，然后连接我的IPHway。,0.3600,0.0565
+sensevoice,s16_mix.wav,这个 project 的 deadline 是下周五。,这个project的 deadline也是下周五。,0.0455,0.0565
+sensevoice,s17_mix.wav,今天的 meeting 改到下午两点。,今天的 meeting改到下午2点。,0.0000,0.0629
+sensevoice,s18_calc.wav,三百六十五乘以二十四等于多少？,365乘以24等于多少？,0.0000,0.0604
+sensevoice,s19_cook.wav,红烧肉要炖多久才好吃？,红烧肉要炖多久才好适？,0.1000,0.0618
+sensevoice,s20_goodnight.wav,好了，我要睡觉了，晚安。,好的，我要睡绝了晚餐。,0.3333,0.0714
+zipformer-ctc-small-zh,s01_cmd.wav,小智，帮我把客厅的灯关掉。,小志帮罗把客厅的灯光脚,0.3636,0.058
+zipformer-ctc-small-zh,s02_reminder.wav,明天早上七点半提醒我吃药。,明天到上七点七星我吃药,0.3333,0.0424
+zipformer-ctc-small-zh,s03_time.wav,下午三点十五分记得去幼儿园接孩子。,下午翻点十五分析的七幼儿园建海,0.4375,0.0433
+zipformer-ctc-small-zh,s04_number.wav,我这个月一共走了十二万三千步。,我这多月一共走了十万万见见股,0.3571,0.0425
+zipformer-ctc-small-zh,s05_phone.wav,请帮我拨打幺三八零零一三八零零零。,挺帮我国百分之三八零零一三八零,0.4375,0.036
+zipformer-ctc-small-zh,s06_date.wav,二零二六年十月二十九日我们开了一个会。,二零二六年十月二十九日我们开一度会,0.1111,0.0435
+zipformer-ctc-small-zh,s07_long.wav,今天天气不错，我们吃完午饭以后一起去公园散散步，顺便买点水果回来好不好？,今天分都是我们四王午饭以后机提示公园发饭不店打家追果回来好吧,0.5758,0.043
+zipformer-ctc-small-zh,s08_chat.wav,你知道为什么天空是蓝色的吗？我一直想不明白。,你真道为什么天空是蓝色的吗我一直想复明呢,0.1500,0.0396
+zipformer-ctc-small-zh,s09_emotion.wav,哎呀，我今天真的好累啊，工作太多了。,哎呀我天天真的好在哪工作太多了,0.2000,0.0397
+zipformer-ctc-small-zh,s10_story.wav,给我讲一个关于小兔子和大灰狼的故事吧。,我表一不关小兔子和大老的故事,0.3889,0.0387
+zipformer-ctc-small-zh,s11_interrupt.wav,等一下，先别说了，刚才那个问题再说一遍。,等一下先结束了刚才那多问题再说一遍,0.1765,0.0434
+zipformer-ctc-small-zh,s12_names.wav,帮我给王小明和李华发消息，说晚上的聚会改到八点。,包我比王小面和李黄花说晚上的聚会载造的,0.5000,0.0402
+zipformer-ctc-small-zh,s13_weather.wav,明天北京会下雨吗？温度大概多少度？,明天北京会下影了温度大在多少住,0.2667,0.0421
+zipformer-ctc-small-zh,s14_music.wav,播放一首周杰伦的歌，音量调到百分之三十。,说房一手结能了个应量走到百分之三十,0.5556,0.0402
+zipformer-ctc-small-zh,s15_mix.wav,帮我打开 Bluetooth，然后连接我的 iPhone。,往往打开<unk> 然后连接我的<unk> 成为你,0.6400,0.0468
+zipformer-ctc-small-zh,s16_mix.wav,这个 project 的 deadline 是下周五。,这个<unk> 的<unk> 一试下周五,0.7273,0.0491
+zipformer-ctc-small-zh,s17_mix.wav,今天的 meeting 改到下午两点。,今天的媒体改到下午两点,0.4375,0.039
+zipformer-ctc-small-zh,s18_calc.wav,三百六十五乘以二十四等于多少？,三百六十五双跌二十四到于多少,0.2143,0.046
+zipformer-ctc-small-zh,s19_cook.wav,红烧肉要炖多久才好吃？,我们说各他本走还好事,0.9000,0.0473
+zipformer-ctc-small-zh,s20_goodnight.wav,好了，我要睡觉了，晚安。,好了围绕最绝的晚,0.6667,0.0379
+zipformer-zh-14m,s01_cmd.wav,小智，帮我把客厅的灯关掉。,小剧帮我把客厅的灯关掉,0.0909,0.0392
+zipformer-zh-14m,s02_reminder.wav,明天早上七点半提醒我吃药。,您应该到下去点赞提醒我吃药,0.5833,0.0384
+zipformer-zh-14m,s03_time.wav,下午三点十五分记得去幼儿园接孩子。,那我发一点钟分析的去幼儿园变海,0.6875,0.04
+zipformer-zh-14m,s04_number.wav,我这个月一共走了十二万三千步。,多多月以后走了十二万五,0.5714,0.0372
+zipformer-zh-14m,s05_phone.wav,请帮我拨打幺三八零零一三八零零零。,请帮我过把一三八零零一半八零,0.3125,0.0342
+zipformer-zh-14m,s06_date.wav,二零二六年十月二十九日我们开了一个会。,二十年十月二十九日我们太多会,0.3889,0.0332
+zipformer-zh-14m,s07_long.wav,今天天气不错，我们吃完午饭以后一起去公园散散步，顺便买点水果回来好不好？,我们四娃不放你后天体制公园发饭不剩下大白家直播回来好吧,0.7879,0.0323
+zipformer-zh-14m,s08_chat.wav,你知道为什么天空是蓝色的吗？我一直想不明白。,你知道为什么天空自来色的吗我一直想送您呢,0.2500,0.0325
+zipformer-zh-14m,s09_emotion.wav,哎呀，我今天真的好累啊，工作太多了。,我听见真的好在那工作太多了,0.4000,0.0324
+zipformer-zh-14m,s10_story.wav,给我讲一个关于小兔子和大灰狼的故事吧。,连我表一个官小兔子和大规扰的故事的,0.3889,0.0335
+zipformer-zh-14m,s11_interrupt.wav,等一下，先别说了，刚才那个问题再说一遍。,等一下先结束了刚才那读问题再输一遍,0.2353,0.0334
+zipformer-zh-14m,s12_names.wav,帮我给王小明和李华发消息，说晚上的聚会改到八点。,帮我给王晓明和李华华特技术晚上的机会在桃花的,0.4545,0.0331
+zipformer-zh-14m,s13_weather.wav,明天北京会下雨吗？温度大概多少度？,明天北京会下云吗温度大概多少度,0.0667,0.0329
+zipformer-zh-14m,s14_music.wav,播放一首周杰伦的歌，音量调到百分之三十。,一手自己的名字爸爸二十八是,0.8889,0.0333
+zipformer-zh-14m,s15_mix.wav,帮我打开 Bluetooth，然后连接我的 iPhone。,往我打开必然的一个地址然后连接我的爱皮成为你,0.6400,0.0339
+zipformer-zh-14m,s16_mix.wav,这个 project 的 deadline 是下周五。,这个婆家的呆是下周五,0.6818,0.034
+zipformer-zh-14m,s17_mix.wav,今天的 meeting 改到下午两点。,明天的媒体人改到下午两点,0.5000,0.0346
+zipformer-zh-14m,s18_calc.wav,三百六十五乘以二十四等于多少？,三百六十五双比二十四到一周,0.4286,0.0334
+zipformer-zh-14m,s19_cook.wav,红烧肉要炖多久才好吃？,文包括我要跟播走排好事,0.9000,0.0337
+zipformer-zh-14m,s20_goodnight.wav,好了，我要睡觉了，晚安。,好了围绕自己的晚餐,0.6667,0.0323
+zipformer-bilingual-small,s01_cmd.wav,小智，帮我把客厅的灯关掉。,小舅帮我把客厅的灯关,0.1818,0.0485
+zipformer-bilingual-small,s02_reminder.wav,明天早上七点半提醒我吃药。,明天早上七点半提醒我吃药,0.0000,0.0436
+zipformer-bilingual-small,s03_time.wav,下午三点十五分记得去幼儿园接孩子。,下午三点十五分去的区幼儿园见海,0.3750,0.0463
+zipformer-bilingual-small,s04_number.wav,我这个月一共走了十二万三千步。,我这多月一共走了十万天千古,0.2857,0.0451
+zipformer-bilingual-small,s05_phone.wav,请帮我拨打幺三八零零一三八零零零。,帮我给我打幺三八零零三八零零,0.3125,0.0566
+zipformer-bilingual-small,s06_date.wav,二零二六年十月二十九日我们开了一个会。,哎呀十月二十九日晚已读会,0.6111,0.0534
+zipformer-bilingual-small,s07_long.wav,今天天气不错，我们吃完午饭以后一起去公园散散步，顺便买点水果回来好不好？,应该坚持不是我们四娃无法你好接体制公园饭饭不顺便白家这个回来好吗,0.6970,0.0482
+zipformer-bilingual-small,s08_chat.wav,你知道为什么天空是蓝色的吗？我一直想不明白。,你知道为什么天空是色的吗我一直想不明呢,0.1000,0.0401
+zipformer-bilingual-small,s09_emotion.wav,哎呀，我今天真的好累啊，工作太多了。,他呀我天天真的好累的工作太多了,0.2000,0.0444
+zipformer-bilingual-small,s10_story.wav,给我讲一个关于小兔子和大灰狼的故事吧。,等我表一波关小兔子和大灰狼的故事的,0.2778,0.0489
+zipformer-bilingual-small,s11_interrupt.wav,等一下，先别说了，刚才那个问题再说一遍。,等一下天结束刚才那个问题再说一遍,0.2353,0.0472
+zipformer-bilingual-small,s12_names.wav,帮我给王小明和李华发消息，说晚上的聚会改到八点。,帮我给王小名和李华发车技术晚上的机会改造八得,0.3182,0.0455
+zipformer-bilingual-small,s13_weather.wav,明天北京会下雨吗？温度大概多少度？,明天北京会下雨吗温度大再多少度,0.0667,0.044
+zipformer-bilingual-small,s14_music.wav,播放一首周杰伦的歌，音量调到百分之三十。,说法一首自别人的歌应在辅导百分之三十,0.5000,0.0505
+zipformer-bilingual-small,s15_mix.wav,帮我打开 Bluetooth，然后连接我的 iPhone。,帮我打开 BRATCH然后连接我的 IP成为你,0.4000,0.0439
+zipformer-bilingual-small,s16_mix.wav,这个 project 的 deadline 是下周五。,这个 PROJECT DELE网易试下周五,0.3182,0.0437
+zipformer-bilingual-small,s17_mix.wav,今天的 meeting 改到下午两点。,今天的每天改到下午两点,0.4375,0.0455
+zipformer-bilingual-small,s18_calc.wav,三百六十五乘以二十四等于多少？,三百六十五乘以二十四等于多少,0.0000,0.0453
+zipformer-bilingual-small,s19_cook.wav,红烧肉要炖多久才好吃？,孤独还好事,0.9000,0.0449
+zipformer-bilingual-small,s20_goodnight.wav,好了，我要睡觉了，晚安。,好的我要聚集了晚餐,0.4444,0.0429
+zipformer-ctc-multi-zh-hans,s01_cmd.wav,小智，帮我把客厅的灯关掉。,区帮我把客厅的灯关角,0.2727,0.1576
+zipformer-ctc-multi-zh-hans,s02_reminder.wav,明天早上七点半提醒我吃药。,天早上七点半七醒我吃药,0.1667,0.1514
+zipformer-ctc-multi-zh-hans,s03_time.wav,下午三点十五分记得去幼儿园接孩子。,午三点十五分记的去幼儿园见海,0.3125,0.1494
+zipformer-ctc-multi-zh-hans,s04_number.wav,我这个月一共走了十二万三千步。,这个月一共走了十二万千千股,0.2143,0.1717
+zipformer-ctc-multi-zh-hans,s05_phone.wav,请帮我拨打幺三八零零一三八零零零。,帮我国八幺三八零零一三八零,0.3125,0.1605
+zipformer-ctc-multi-zh-hans,s06_date.wav,二零二六年十月二十九日我们开了一个会。,把零二六年十月二十九日文拍议度会,0.3889,0.1601
+zipformer-ctc-multi-zh-hans,s07_long.wav,今天天气不错，我们吃完午饭以后一起去公园散散步，顺便买点水果回来好不好？,该洗不是我们吃完午饭的好奇体示公园饭散不顺便白连直宝回来好了,0.5455,0.1408
+zipformer-ctc-multi-zh-hans,s08_chat.wav,你知道为什么天空是蓝色的吗？我一直想不明白。,知道为什么天空是色的吗我一直想不明呢,0.1500,0.1397
+zipformer-ctc-multi-zh-hans,s09_emotion.wav,哎呀，我今天真的好累啊，工作太多了。,他演过今年真的好在的工作太多了,0.4000,0.1422
+zipformer-ctc-multi-zh-hans,s10_story.wav,给我讲一个关于小兔子和大灰狼的故事吧。,两国表一的管小兔子和大灰狼的故事了,0.3889,0.1447
+zipformer-ctc-multi-zh-hans,s11_interrupt.wav,等一下，先别说了，刚才那个问题再说一遍。,一下先结束刚才那个问题再说一遍,0.2353,0.1347
+zipformer-ctc-multi-zh-hans,s12_names.wav,帮我给王小明和李华发消息，说晚上的聚会改到八点。,我对王小面可李华发教技术晚上的机会改造挂德,0.5000,0.1321
+zipformer-ctc-multi-zh-hans,s13_weather.wav,明天北京会下雨吗？温度大概多少度？,天北京会下雨吗温度大在多少注,0.2000,0.1418
+zipformer-ctc-multi-zh-hans,s14_music.wav,播放一首周杰伦的歌，音量调到百分之三十。,房一手杰的做冰淡佛道百分之三十,0.5556,0.138
+zipformer-ctc-multi-zh-hans,s15_mix.wav,帮我打开 Bluetooth，然后连接我的 iPhone。,我打开B然AT和T然后连接我的IPT你,0.4400,0.144
+zipformer-ctc-multi-zh-hans,s16_mix.wav,这个 project 的 deadline 是下周五。,这个跑家子的带路网已实现周五,0.7727,0.1573
+zipformer-ctc-multi-zh-hans,s17_mix.wav,今天的 meeting 改到下午两点。,因天的媒体改到下午两点,0.5000,0.1622
+zipformer-ctc-multi-zh-hans,s18_calc.wav,三百六十五乘以二十四等于多少？,在百六十五升底二十四等宇周上,0.4286,0.1422
+zipformer-ctc-multi-zh-hans,s19_cook.wav,红烧肉要炖多久才好吃？,我口肉药等不多还好是,0.8000,0.1473
+zipformer-ctc-multi-zh-hans,s20_goodnight.wav,好了，我要睡觉了，晚安。,跑的围绕最绝的晚餐,0.8889,0.1339
+paraformer-zh-small,s01_cmd.wav,小智，帮我把客厅的灯关掉。,小智帮我把客厅的灯关调,0.0909,0.0202
+paraformer-zh-small,s02_reminder.wav,明天早上七点半提醒我吃药。,明天早上七点半提醒我吃药,0.0000,0.0187
+paraformer-zh-small,s03_time.wav,下午三点十五分记得去幼儿园接孩子。,下午三点十五分记得去幼儿园见海,0.1875,0.0187
+paraformer-zh-small,s04_number.wav,我这个月一共走了十二万三千步。,我这个月一共走了十二万将千五,0.1429,0.0187
+paraformer-zh-small,s05_phone.wav,请帮我拨打幺三八零零一三八零零零。,请帮我拨打幺三八零零一三八零零零,0.0000,0.0192
+paraformer-zh-small,s06_date.wav,二零二六年十月二十九日我们开了一个会。,二零二六年十月二十九日我们开了一个会,0.0000,0.0217
+paraformer-zh-small,s07_long.wav,今天天气不错，我们吃完午饭以后一起去公园散散步，顺便买点水果回来好不好？,今天惊气不说我们吃完午饭你后期一起去公园饭饭不顺间带点追果回来好吧,0.3636,0.0178
+paraformer-zh-small,s08_chat.wav,你知道为什么天空是蓝色的吗？我一直想不明白。,你知道为什么天空是蓝色的吗我一直想透名呢,0.1500,0.0172
+paraformer-zh-small,s09_emotion.wav,哎呀，我今天真的好累啊，工作太多了。,哎呀我今天真的好累的工作太多了,0.0667,0.0178
+paraformer-zh-small,s10_story.wav,给我讲一个关于小兔子和大灰狼的故事吧。,给我讲一个关小兔子和大灰狼的故事吧,0.0556,0.0184
+paraformer-zh-small,s11_interrupt.wav,等一下，先别说了，刚才那个问题再说一遍。,等一下先结束了刚才那个问题再输一遍,0.1765,0.0182
+paraformer-zh-small,s12_names.wav,帮我给王小明和李华发消息，说晚上的聚会改到八点。,帮我给王小明和李华发消息说晚上的机会在到八点,0.0909,0.0174
+paraformer-zh-small,s13_weather.wav,明天北京会下雨吗？温度大概多少度？,明天北京会下雨吗温度大在多少度,0.0667,0.0178
+paraformer-zh-small,s14_music.wav,播放一首周杰伦的歌，音量调到百分之三十。,播放一首周杰伦的歌冰量索到百分之三十,0.1111,0.0185
+paraformer-zh-small,s15_mix.wav,帮我打开 Bluetooth，然后连接我的 iPhone。,帮我打开 biita teach 然后连接我的 ip 为你,0.4400,0.0184
+paraformer-zh-small,s16_mix.wav,这个 project 的 deadline 是下周五。,这个 project 的 deadline 是下周五,0.0000,0.0187
+paraformer-zh-small,s17_mix.wav,今天的 meeting 改到下午两点。,明天的 meeting 改到下午两点,0.0625,0.0206
+paraformer-zh-small,s18_calc.wav,三百六十五乘以二十四等于多少？,三百六十五乘以二十四等于多少,0.0000,0.0181
+paraformer-zh-small,s19_cook.wav,红烧肉要炖多久才好吃？,红烧肉要炖多久才好吃,0.0000,0.0194
+paraformer-zh-small,s20_goodnight.wav,好了，我要睡觉了，晚安。,好了我要醉绝了晚安,0.2222,0.0181
+dolphin-base,s01_cmd.wav,小智，帮我把客厅的灯关掉。,调至钢老板客厅芯的灯官桥,0.7273,0.0481
+dolphin-base,s02_reminder.wav,明天早上七点半提醒我吃药。,明天早上七点半提醒我吃药,0.0000,0.0331
+dolphin-base,s03_time.wav,下午三点十五分记得去幼儿园接孩子。,下午三点十五分的去幼儿园建海,0.3125,0.0228
+dolphin-base,s04_number.wav,我这个月一共走了十二万三千步。,我这个多月月银恐走了十万万将千路,0.5000,0.0235
+dolphin-base,s05_phone.wav,请帮我拨打幺三八零零一三八零零零。,请帮我过单交三八八零零零一三八零零零,0.3125,0.042
+dolphin-base,s06_date.wav,二零二六年十月二十九日我们开了一个会。,二零二十月二十九参与议就可以,0.5556,0.0229
+dolphin-base,s07_long.wav,今天天气不错，我们吃完午饭以后一起去公园散散步，顺便买点水果回来好不好？,今天惊喜起不我们视娃不犯理后期体制工人燃犯暂不受见歹联结果回来好了,0.7576,0.0298
+dolphin-base,s08_chat.wav,你知道为什么天空是蓝色的吗？我一直想不明白。,你知道为什么天空是蓝色的吗我一直想透明呢,0.1000,0.0231
+dolphin-base,s09_emotion.wav,哎呀，我今天真的好累啊，工作太多了。,哎呀我今天真的好在工作太多了,0.1333,0.0243
+dolphin-base,s10_story.wav,给我讲一个关于小兔子和大灰狼的故事吧。,给我讲的关系兔子和大灰狼的故事打,0.2778,0.0235
+dolphin-base,s11_interrupt.wav,等一下，先别说了，刚才那个问题再说一遍。,等一下先结束了刚才财那的问题再输一遍,0.2941,0.0235
+dolphin-base,s12_names.wav,帮我给王小明和李华发消息，说晚上的聚会改到八点。,帮我给王小明明可李狂发车据说书晚上的机会改造照八点,0.4091,0.0251
+dolphin-base,s13_weather.wav,明天北京会下雨吗？温度大概多少度？,明天北京会下雨影吗温度坝在多少度,0.2000,0.0232
+dolphin-base,s14_music.wav,播放一首周杰伦的歌，音量调到百分之三十。,播放一首一首苏杰伦的歌 冰在佛到百分之百分之三十,0.5000,0.0243
+dolphin-base,s15_mix.wav,帮我打开 Bluetooth，然后连接我的 iPhone。,"帮我打开BI to theteach ,然后连接我的 I P H为您ne。",0.4000,0.0233
+dolphin-base,s16_mix.wav,这个 project 的 deadline 是下周五。,这个 projects 的dadad网试下周五。,0.3182,0.025
+dolphin-base,s17_mix.wav,今天的 meeting 改到下午两点。,今天的的媒体改到下午两点,0.4375,0.0254
+dolphin-base,s18_calc.wav,三百六十五乘以二十四等于多少？,三百六十五乘以二十四等于多少,0.0000,0.0239
+dolphin-base,s19_cook.wav,红烧肉要炖多久才好吃？,王涛肉要炖多久才好事,0.3000,0.0235
+dolphin-base,s20_goodnight.wav,好了，我要睡觉了，晚安。,好了我要最觉的晚餐,0.3333,0.0233

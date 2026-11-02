@@ -1,0 +1,14 @@
+# 模型文件（体积大，用 download_models.py 下载）
+models/
+*.onnx
+*.tar.bz2
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 系统
+.DS_Store
+Thumbs.db

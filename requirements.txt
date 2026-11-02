@@ -1,0 +1,8 @@
+sherpa-onnx>=1.12.15
+numpy
+fastapi>=0.100
+uvicorn>=0.23
+huggingface_hub>=0.20
+# 仅 download_models.py 量化 multi-zh-hans 模型时用到
+onnx
+onnxruntime

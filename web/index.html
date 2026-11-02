@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>端侧 ASR 对比板</title>
+<style>
+:root{
+  --bg:#f5f6f8;--panel:#fff;--ink:#1d2129;--muted:#6b7280;--line:#e5e7eb;
+  --accent:#2563eb;--accent-soft:#e8efff;--ok:#16a34a;--ok-soft:#e9f8ee;--warn:#d97706;--warn-soft:#fff5e6;
+  --bad:#dc2626;--bad-soft:#fdecec;--rec:#e11d48;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#0f1115;--panel:#181b21;--ink:#e6e8eb;--muted:#9aa1ab;--line:#2a2f37;
+    --accent:#6b9bff;--accent-soft:#1d2a44;--ok:#4ade80;--ok-soft:#14301f;--warn:#fbbf24;--warn-soft:#33270f;
+    --bad:#f87171;--bad-soft:#3a1717;--rec:#fb7185;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+header{padding:18px 24px 6px}
+h1{font-size:20px;margin:0 0 4px}
+h2{font-size:15px;margin:0 0 10px}
+.sub{color:var(--muted);font-size:13px}
+main{padding:12px 24px 40px;display:grid;gap:16px;max-width:1500px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.ctrl{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:start}
+#talk{width:150px;height:150px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer;user-select:none;touch-action:none;box-shadow:0 4px 14px rgba(37,99,235,.3)}
+#talk.rec{background:var(--rec);box-shadow:0 0 0 10px rgba(225,29,72,.18)}
+#talk:disabled{opacity:.5;cursor:wait}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+textarea{width:100%;min-height:54px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;resize:vertical}
+button.s,label.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:5px 11px;cursor:pointer;font:inherit}
+button.s:disabled{opacity:.45;cursor:default}
+select,input[type=number]{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:3px 6px;font:inherit}
+.meter{height:6px;width:220px;background:var(--line);border-radius:3px;overflow:hidden}
+.meter>i{display:block;height:100%;width:0;background:var(--ok);transition:width .08s}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--panel);display:flex;flex-direction:column;gap:8px}
+.card.best{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok) inset}
+.card .t{font-size:16px;min-height:48px;word-break:break-all}
+.card .t.empty{color:var(--muted);font-style:italic;font-size:14px}
+.kv{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.kv b{color:var(--ink);font-weight:600}
+.partials{font-size:12px;color:var(--muted);max-height:70px;overflow:auto;border-top:1px dashed var(--line);padding-top:4px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;background:var(--bg);position:sticky;top:0}
+.tw{overflow-x:auto}
+.diff del{background:var(--bad-soft);color:var(--bad);text-decoration:none}
+.diff ins{background:var(--warn-soft);color:var(--warn);text-decoration:none}
+.seg{display:flex;gap:8px;padding:4px 0;border-bottom:1px dashed var(--line)}
+.spk{min-width:70px;font-weight:600}
+.muted{color:var(--muted)}
+.err{color:var(--bad)}
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:12px;background:var(--bg)}
+@media (max-width:720px){.ctrl{grid-template-columns:1fr} #talk{width:100%;height:80px;border-radius:12px} main,header{padding-left:14px;padding-right:14px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>端侧语音转写模型 · 同句对比板</h1>
+  <div class="sub">陪伴机器人端侧 ASR 选型 · sherpa-onnx · 全部本地 CPU 推理 · <span id="status">连接中…</span></div>
+</header>
+<main>
+
+<section class="panel ctrl">
+  <div style="text-align:center">
+    <button id="talk" disabled>加载中…</button>
+    <div class="sub" style="margin-top:8px">按住 <kbd>空格</kbd> 或按住按钮说话</div>
+    <div class="sub" id="timer">&nbsp;</div>
+  </div>
+  <div>
+    <div class="row"><b>参考文本</b><span class="sub">（可选。填写后计算 CER，忽略标点和空格）</span></div>
+    <textarea id="ref" placeholder="例如：今天下午三点提醒我给妈妈打电话"></textarea>
+    <div class="row" style="margin-top:10px">
+      <span class="meter"><i id="lvl"></i></span>
+      <label title="把 9点/123000 等阿拉伯数字转成汉字读法再算 CER，避免 ITN 输出被误判"><input type="checkbox" id="normnum" checked> 数字归一化</label>
+      <label><input type="checkbox" id="diar"> 分角色（说话人分离）</label>
+      <label>人数 <select id="nspk"><option value="-1">自动</option><option>2</option><option>3</option><option>4</option></select></label>
+      <label class="btn">上传 WAV<input type="file" id="file" accept=".wav,audio/wav" hidden></label>
+      <button class="s" id="replay" disabled>▶ 回放</button>
+      <button class="s" id="again" disabled>↻ 用上一段重跑</button>
+      <button class="s" id="dl" disabled>⬇ 保存录音</button>
+    </div>
+    <div class="sub" id="msg"></div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>转写结果 <span class="sub" id="runinfo"></span></h2>
+  <div class="grid" id="results"><div class="muted">还没有结果。按住空格说一句话试试。</div></div>
+  <div id="diarbox" style="margin-top:14px"></div>
+</section>
+
+<section class="panel">
+  <h2>需求对照表 <span class="sub">（精度一栏用本次会话里填过参考文本的平均 CER，与 SenseVoice 基准比较）</span></h2>
+  <div class="tw"><table id="req"></table></div>
+</section>
+
+<section class="panel">
+  <h2>模型参数卡</h2>
+  <div class="tw"><table id="params"></table></div>
+</section>
+
+<section class="panel">
+  <h2>本次会话记录 <span class="sub">（仅保存在当前页面）</span> <button class="s" id="export">导出 CSV</button></h2>
+  <div class="tw"><table id="hist"></table></div>
+</section>
+
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let MODELS = [], DIAR = {}, history = [], lastWav = null, busy = false;
+
+// ------------------------------------------------------------ 加载模型信息
+async function loadModels(){
+  const r = await fetch('/api/models'); const d = await r.json();
+  MODELS = d.models; DIAR = d.diarization;
+  const loaded = MODELS.filter(m => m.status === 'loaded');
+  $('#status').innerHTML = `已加载 <b>${loaded.length}</b>/${MODELS.length} 个模型 · 线程数 ${d.threads} · 分角色 ` +
+    (DIAR.ready ? '<span class="pill ok">就绪</span>' : `<span class="pill warn" title="${esc(DIAR.error)}">不可用</span>`);
+  if (!DIAR.ready) { $('#diar').disabled = true; $('#diar').parentElement.title = DIAR.error || ''; }
+  const btn = $('#talk');
+  if (loaded.length){ btn.disabled = false; btn.textContent = '按住说话'; }
+  else { btn.textContent = '无可用模型'; $('#msg').innerHTML = '<span class="err">没有已加载的模型，请先运行 python download_models.py，再重启 server.py</span>'; }
+  renderParams(); renderReq();
+}
+
+// ------------------------------------------------------------ 录音
+let ctx, stream, src, proc, chunks = [], recording = false, t0 = 0, timerId;
+async function startRec(){
+  if (recording || busy || $('#talk').disabled) return;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1, echoCancellation:true, noiseSuppression:true, autoGainControl:true}});
+  }catch(e){ $('#msg').innerHTML = `<span class="err">无法打开麦克风：${esc(e.message)}。请用 http://127.0.0.1 或 localhost 打开并允许麦克风权限。</span>`; return; }
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  src = ctx.createMediaStreamSource(stream);
+  proc = ctx.createScriptProcessor(4096, 1, 1);
+  chunks = [];
+  proc.onaudioprocess = e => {
+    if (!recording) return;
+    const x = e.inputBuffer.getChannelData(0); chunks.push(new Float32Array(x));
+    let m = 0; for (let i = 0; i < x.length; i += 8) m = Math.max(m, Math.abs(x[i]));
+    $('#lvl').style.width = Math.min(100, m * 140) + '%';
+  };
+  src.connect(proc); proc.connect(ctx.destination);
+  recording = true; t0 = performance.now();
+  $('#talk').classList.add('rec'); $('#talk').textContent = '松开识别';
+  timerId = setInterval(() => $('#timer').textContent = ((performance.now() - t0) / 1000).toFixed(1) + ' s', 100);
+}
+async function stopRec(){
+  if (!recording) return;
+  recording = false; clearInterval(timerId);
+  $('#talk').classList.remove('rec'); $('#lvl').style.width = '0';
+  await new Promise(r => setTimeout(r, 120)); // 收尾最后一个 buffer
+  proc.disconnect(); src.disconnect(); stream.getTracks().forEach(t => t.stop());
+  const sr = ctx.sampleRate; await ctx.close();
+  const len = chunks.reduce((a, c) => a + c.length, 0), all = new Float32Array(len);
+  let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
+  if (len / sr < 0.3){ $('#talk').textContent = '按住说话'; $('#msg').textContent = '录音太短，至少按住 0.3 秒'; return; }
+  lastWav = encodeWav(resample(all, sr, 16000), 16000);
+  send(lastWav);
+}
+function resample(x, from, to){
+  if (from === to) return x;
+  const n = Math.round(x.length * to / from), y = new Float32Array(n), r = from / to;
+  for (let i = 0; i < n; i++){ const p = i * r, j = Math.floor(p), f = p - j; y[i] = (x[j] || 0) * (1 - f) + (x[j + 1] || 0) * f; }
+  return y;
+}
+function encodeWav(x, sr){
+  const b = new ArrayBuffer(44 + x.length * 2), v = new DataView(b);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0,'RIFF'); v.setUint32(4, 36 + x.length * 2, true); w(8,'WAVE'); w(12,'fmt ');
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,sr,true);
+  v.setUint32(28,sr*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,x.length*2,true);
+  for (let i = 0; i < x.length; i++){ const s = Math.max(-1, Math.min(1, x[i])); v.setInt16(44 + i*2, s < 0 ? s*0x8000 : s*0x7fff, true); }
+  return new Blob([b], {type:'audio/wav'});
+}
+
+// ------------------------------------------------------------ 推理请求
+async function send(wav){
+  busy = true; const btn = $('#talk'); btn.disabled = true; btn.textContent = '识别中…';
+  ['#replay','#again','#dl'].forEach(s => $(s).disabled = false);
+  const ref = $('#ref').value.trim();
+  const qs = new URLSearchParams({ref, diarize: $('#diar').checked ? 1 : 0, num_speakers: $('#nspk').value, norm_num: $('#normnum').checked ? 1 : 0});
+  $('#msg').textContent = '';
+  try{
+    const r = await fetch('/api/transcribe?' + qs, {method:'POST', body: wav, headers:{'Content-Type':'audio/wav'}});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    history.unshift(d); renderResults(d); renderReq(); renderParams(); renderHist();
+  }catch(e){ $('#msg').innerHTML = `<span class="err">识别失败：${esc(e.message)}</span>`; }
+  busy = false; btn.disabled = false; btn.textContent = '按住说话';
+}
+
+// ------------------------------------------------------------ 渲染
+const mname = k => (MODELS.find(m => m.key === k) || {name:k}).name;
+const mspec = k => MODELS.find(m => m.key === k) || {};
+const pct = v => v == null ? '—' : (v * 100).toFixed(1) + '%';
+
+function diffHtml(ref, hyp){
+  // 字符级对齐，红色=漏/错（参考中的字），黄色=多/错（识别出的字）
+  const norm = s => s.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+  const a = [...norm(ref)], b = [...norm(hyp)], n = a.length, m = b.length;
+  const D = Array.from({length:n+1}, (_, i) => { const r = new Array(m+1).fill(0); r[0] = i; return r; });
+  for (let j = 0; j <= m; j++) D[0][j] = j;
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++)
+    D[i][j] = Math.min(D[i-1][j] + 1, D[i][j-1] + 1, D[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  const out = []; let i = n, j = m;
+  while (i > 0 || j > 0){
+    if (i > 0 && j > 0 && D[i][j] === D[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1)){
+      out.push(a[i-1] === b[j-1] ? esc(b[j-1]) : `<del>${esc(a[i-1])}</del><ins>${esc(b[j-1])}</ins>`); i--; j--;
+    } else if (i > 0 && D[i][j] === D[i-1][j] + 1){ out.push(`<del>${esc(a[i-1])}</del>`); i--; }
+    else { out.push(`<ins>${esc(b[j-1])}</ins>`); j--; }
+  }
+  return out.reverse().join('');
+}
+
+function renderResults(d){
+  $('#runinfo').textContent = `· ${d.time} · 音频 ${d.duration.toFixed(2)} s`;
+  const ok = d.results.filter(r => !r.error);
+  const bestCer = Math.min(...ok.filter(r => r.cer != null).map(r => r.cer));
+  const fastest = Math.min(...ok.map(r => r.rtf));
+  $('#results').innerHTML = d.results.map(r => {
+    const s = mspec(r.key);
+    if (r.error) return `<div class="card"><b>${esc(s.name)}</b><div class="err">${esc(r.error)}</div></div>`;
+    const best = r.cer != null && r.cer === bestCer;
+    const tags = [];
+    if (s.streaming) tags.push('<span class="pill">流式</span>'); else tags.push('<span class="pill warn">离线</span>');
+    if (best) tags.push('<span class="pill ok">CER 最低</span>');
+    if (r.rtf === fastest) tags.push('<span class="pill ok">最快</span>');
+    const extra = ['lang','emotion','event'].filter(k => r[k]).map(k => `${{lang:'语种',emotion:'情感',event:'事件'}[k]} <b>${esc(r[k])}</b>`);
+    const text = r.text ? (d.ref ? `<div class="t diff">${diffHtml(d.ref, r.text)}</div><div class="sub">原文：${esc(r.text)}</div>` : `<div class="t">${esc(r.text)}</div>`)
+                        : '<div class="t empty">（空）</div>';
+    const partials = s.streaming && r.partials && r.partials.length
+      ? `<div class="partials">${r.partials.map(p => `<div>${p.t.toFixed(1)}s ▸ ${esc(p.text)}</div>`).join('')}</div>` : '';
+    return `<div class="card ${best ? 'best' : ''}">
+      <div class="row" style="margin:0;justify-content:space-between"><b>${esc(s.name)}</b><span>${tags.join(' ')}</span></div>
+      ${text}
+      <div class="kv">
+        <span>耗时 <b>${r.elapsed_ms} ms</b></span><span>RTF <b>${r.rtf}</b></span>
+        ${r.cer != null ? `<span>CER <b>${pct(r.cer)}</b></span>` : ''}
+        ${s.streaming ? `<span>首字出现 <b>${r.first_partial_at != null ? r.first_partial_at.toFixed(1) + ' s' : '—'}</b></span><span>每100ms块 <b>${r.chunk_ms_avg} ms</b>(max ${r.chunk_ms_max})</span>` : ''}
+        <span>数字 <b>${r.has_arabic_digits ? '阿拉伯' : '无阿拉伯数字'}</b></span>
+        <span>体积 <b>${s.disk_size_mb ?? s.doc_size_mb} MB</b></span>
+        ${extra.map(e => `<span>${e}</span>`).join('')}
+      </div>${partials}</div>`;
+  }).join('');
+
+  const dz = d.diarization;
+  if (!dz) { $('#diarbox').innerHTML = ''; return; }
+  if (dz.error) { $('#diarbox').innerHTML = `<div class="err">分角色失败：${esc(dz.error)}</div>`; return; }
+  $('#diarbox').innerHTML = `<h2>分角色结果 <span class="sub">${dz.num_speakers} 位说话人 · 分离耗时 ${dz.elapsed_ms} ms · 分段转写用 ${esc(dz.asr_model)}</span></h2>` +
+    (dz.segments.length ? dz.segments.map(s => `<div class="seg"><span class="spk">说话人${s.speaker + 1}</span><span class="muted">${s.start.toFixed(1)}–${s.end.toFixed(1)}s</span><span>${esc(s.text)}</span></div>`).join('')
+                        : '<div class="muted">没有检测到语音段（音频太短或太安静）。</div>');
+}
+
+function sessionStats(){
+  const st = {};
+  for (const run of history) for (const r of run.results) {
+    if (r.error) continue;
+    const s = st[r.key] ||= {cer:[], rtf:[], arabic:false};
+    if (r.cer != null) s.cer.push(r.cer);
+    s.rtf.push(r.rtf); s.arabic ||= r.has_arabic_digits;
+  }
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  for (const k in st) { st[k].avgCer = avg(st[k].cer); st[k].avgRtf = avg(st[k].rtf); }
+  return st;
+}
+
+const P = (cls, txt) => `<span class="pill ${cls}">${txt}</span>`;
+function renderReq(){
+  const st = sessionStats(), base = st.sensevoice?.avgCer;
+  const rows = MODELS.filter(m => m.status !== 'missing' || m.default).map(m => {
+    const size = m.disk_size_mb ?? m.doc_size_mb;
+    const sz = size == null ? P('', '未知') : size < 100 ? P('ok', `✓ ${size}MB &lt;100`) : size <= 150 ? P('warn', `△ ${size}MB ≤150`) : P('bad', `✗ ${size}MB &gt;150`);
+    const stream = m.streaming ? P('ok', '✓ 流式') : P('warn', '△ 离线（可配 VAD 分段）');
+    const s = st[m.key]; let acc;
+    if (!s || s.avgCer == null) acc = P('', m.status === 'loaded' ? '待测（填参考文本）' : '未加载');
+    else if (m.key === 'sensevoice') acc = P('ok', `基准 ${pct(s.avgCer)}`);
+    else if (base == null) acc = P('', `${pct(s.avgCer)}（无基准）`);
+    else { const d = s.avgCer - base;
+      acc = d <= 0.01 ? P('ok', `✓ ${pct(s.avgCer)} ≈/优于基准`) : d <= 0.05 ? P('warn', `△ ${pct(s.avgCer)} 比基准 +${(d*100).toFixed(1)}`) : P('bad', `✗ ${pct(s.avgCer)} 比基准 +${(d*100).toFixed(1)}`); }
+    const diar = DIAR.ready ? P('warn', '△ 外挂 pyannote+3D-Speaker（已集成）') : P('bad', '✗ 未下载分离模型');
+    const tts = P('', '— 属 TTS 模块，见 selection.md');
+    const st8 = {loaded: P('ok', '已加载'), downloaded: P('', '已下载未加载'), missing: P('bad', '未下载'), error: P('bad', '加载失败')}[m.status];
+    return `<tr><td><b>${esc(m.name)}</b><br>${st8}</td><td>${sz}</td><td>${stream}</td><td>${acc}</td><td>${diar}</td><td>${tts}</td></tr>`;
+  }).join('');
+  $('#req').innerHTML = `<tr><th>模型</th><th>体积（≤150MB，最好 &lt;100MB）</th><th>流式</th><th>精度（会话平均 CER）</th><th>分角色</th><th>音色定制</th></tr>${rows}`;
+}
+
+function renderParams(){
+  const st = sessionStats();
+  const rows = MODELS.map(m => {
+    const num = st[m.key] ? (st[m.key].arabic ? '本次出现过阿拉伯数字' : '本次未出现阿拉伯数字') : '';
+    const err = m.error ? `<div class="err">${esc(m.error)}</div>` : '';
+    return `<tr><td><b>${esc(m.name)}</b><div class="sub">${esc(m.key)}</div>${err}</td>
+      <td>${m.disk_size_mb != null ? `<b>${m.disk_size_mb}</b> MB（本机）<br>` : ''}<span class="sub">文档 ${m.doc_size_mb ?? '?'} MB：${esc(m.size_source)}</span></td>
+      <td>${m.streaming ? '流式' : '离线'}</td><td>${esc(m.languages)}</td>
+      <td>${esc(m.number_format)}${num ? `<div class="sub">${num}</div>` : ''}</td>
+      <td>${esc(m.public_cer)}</td><td>${esc(m.license)}</td>
+      <td>${st[m.key] ? `RTF ${st[m.key].avgRtf.toFixed(3)}` : '—'}${m.load_seconds != null ? `<div class="sub">加载 ${m.load_seconds}s</div>` : ''}</td>
+      <td><a href="${esc(m.link)}" target="_blank" rel="noopener">文档</a></td></tr>`;
+  }).join('');
+  $('#params').innerHTML = `<tr><th>模型</th><th>体积</th><th>流式/离线</th><th>语言</th><th>数字输出格式</th><th>公开 CER（测试集/出处）</th><th>许可证</th><th>本机平均 RTF</th><th>链接</th></tr>${rows}`;
+}
+
+function renderHist(){
+  const keys = MODELS.filter(m => m.status === 'loaded').map(m => m.key);
+  const head = `<tr><th>时间</th><th>时长</th><th>参考文本</th>${keys.map(k => `<th>${esc(mname(k))}</th>`).join('')}</tr>`;
+  const rows = history.map(run => `<tr><td>${run.time}</td><td>${run.duration.toFixed(1)}s</td><td>${esc(run.ref) || '<span class="muted">—</span>'}</td>` +
+    keys.map(k => { const r = run.results.find(x => x.key === k); if (!r) return '<td>—</td>'; if (r.error) return '<td class="err">错误</td>';
+      return `<td>${esc(r.text)}<div class="sub">${r.cer != null ? 'CER ' + pct(r.cer) + ' · ' : ''}RTF ${r.rtf}</div></td>`; }).join('') + '</tr>').join('');
+  const st = sessionStats();
+  const avg = `<tr><td colspan="3"><b>平均</b></td>${keys.map(k => `<td><b>${st[k]?.avgCer != null ? 'CER ' + pct(st[k].avgCer) : ''}</b><div class="sub">RTF ${st[k] ? st[k].avgRtf.toFixed(3) : '—'}</div></td>`).join('')}</tr>`;
+  $('#hist').innerHTML = head + (history.length ? avg : '') + rows;
+}
+
+function exportCsv(){
+  const keys = MODELS.filter(m => m.status === 'loaded').map(m => m.key);
+  const q = s => '"' + String(s ?? '').replace(/"/g, '""') + '"';
+  const lines = [['time','duration','ref', ...keys.flatMap(k => [k + '_text', k + '_cer', k + '_rtf'])].map(q).join(',')];
+  for (const run of history) lines.push([run.time, run.duration, run.ref, ...keys.flatMap(k => { const r = run.results.find(x => x.key === k) || {}; return [r.text, r.cer, r.rtf]; })].map(q).join(','));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], {type:'text/csv'}));
+  a.download = 'asr_compare.csv'; a.click();
+}
+
+// ------------------------------------------------------------ 事件
+const typing = () => ['TEXTAREA','INPUT','SELECT'].includes(document.activeElement?.tagName) && document.activeElement.type !== 'checkbox';
+window.addEventListener('keydown', e => { if (e.code === 'Space' && !typing()) { e.preventDefault(); if (!e.repeat) startRec(); } });
+window.addEventListener('keyup', e => { if (e.code === 'Space' && !typing()) { e.preventDefault(); stopRec(); } });
+const talk = $('#talk');
+talk.addEventListener('pointerdown', e => { talk.setPointerCapture(e.pointerId); startRec(); });
+talk.addEventListener('pointerup', stopRec);
+talk.addEventListener('pointercancel', stopRec);
+$('#replay').onclick = () => lastWav && new Audio(URL.createObjectURL(lastWav)).play();
+$('#again').onclick = () => lastWav && !busy && send(lastWav);
+$('#dl').onclick = () => { if (!lastWav) return; const a = document.createElement('a'); a.href = URL.createObjectURL(lastWav); a.download = 'rec_' + Date.now() + '.wav'; a.click(); };
+$('#export').onclick = exportCsv;
+$('#file').onchange = e => { const f = e.target.files[0]; if (f) { lastWav = f; send(f); } e.target.value = ''; };
+loadModels().catch(e => $('#status').innerHTML = `<span class="err">无法连接后端：${esc(e.message)}</span>`);
+</script>
+</body>
+</html>

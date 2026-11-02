@@ -121,19 +121,29 @@ async def api_transcribe(request: Request, ref: str = "", diarize: int = 0, num_
     duration = len(samples) / sr
     if duration < 0.2:
         raise HTTPException(400, "录音太短（<0.2s）")
-    results, diar = await run_in_threadpool(_run_all, samples, sr, ref, diarize, num_speakers, threshold,
-                                            bool(norm_num), bool(vad))
+    results, diar, vad_info = await run_in_threadpool(_run_all, samples, sr, ref, diarize, num_speakers,
+                                                     threshold, bool(norm_num), bool(vad))
     return JSONResponse({"duration": round(duration, 3), "results": results, "diarization": diar,
-                         "ref": ref, "vad": bool(vad), "time": time.strftime("%H:%M:%S")})
+                         "ref": ref, "vad": bool(vad), "vad_info": vad_info,
+                         "time": time.strftime("%H:%M:%S")})
 
 
 def _run_all(samples: np.ndarray, sr: int, ref: str, diarize: int, num_speakers: int, threshold: float,
              norm_num: bool, use_vad: bool = True):
+    """注意：VAD 只算一次，供所有模型共用；各模型耗时里不含 VAD。"""
     results = []
+    vad_info = {"enabled": bool(use_vad), "ms": 0.0, "n_segments": 0}
     with LOCK:
+        segs: list = []
+        if use_vad:
+            segs, vad_ms = asr_engine.compute_vad(samples, sr)
+            vad_info = {"enabled": True, "ms": vad_ms, "n_segments": len(segs)}
+            if not segs:
+                # 没有 VAD 模型或没检到人声：保持原行为（长音频退回固定窗口）
+                vad_info["note"] = "未检到人声段，退回固定窗口切分"
         for key, m in STATE["models"].items():
             try:
-                r = m.transcribe(samples, sr, use_vad=use_vad)
+                r = m.transcribe(samples, sr, segs=segs)
                 if ref.strip():
                     c = asr_engine.cer(ref, r["text"], norm_num)
                     r["cer"] = None if c is None else round(c, 4)
@@ -157,7 +167,7 @@ def _run_all(samples: np.ndarray, sr: int, ref: str, diarize: int, num_speakers:
                             "num_speakers": len({s["speaker"] for s in segs})}
                 except Exception as e:  # noqa: BLE001
                     diar = {"error": f"{type(e).__name__}: {e}"}
-    return results, diar
+    return results, diar, vad_info
 
 
 def main():

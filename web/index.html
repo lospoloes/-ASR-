@@ -222,7 +222,11 @@ function diffHtml(ref, hyp){
 }
 
 function renderResults(d){
-  $('#runinfo').textContent = `· ${d.time} · 音频 ${d.duration.toFixed(2)} s`;
+  const vi = d.vad_info || {};
+  const vadTxt = vi.enabled
+    ? (vi.n_segments ? ` · VAD 耗时 ${vi.ms} ms（${vi.n_segments} 段）` : ` · VAD ${vi.ms} ms · ${vi.note || '未切出人声'}`)
+    : ' · 未开 VAD（30s 窗口）';
+  $('#runinfo').textContent = `· ${d.time} · 音频 ${d.duration.toFixed(2)} s${vadTxt}`;
   const ok = d.results.filter(r => !r.error);
   const bestCer = Math.min(...ok.filter(r => r.cer != null).map(r => r.cer));
   const fastest = Math.min(...ok.map(r => r.rtf));
@@ -243,7 +247,7 @@ function renderResults(d){
       <div class="row" style="margin:0;justify-content:space-between"><b>${esc(s.name)}</b><span>${tags.join(' ')}</span></div>
       ${text}
       <div class="kv">
-        <span>耗时 <b>${r.elapsed_ms} ms</b></span><span>RTF <b>${r.rtf}</b></span>
+        <span>耗时 <b>${r.elapsed_ms} ms</b></span><span>RTF <b>${r.rtf}</b>${d.vad_info?.enabled ? '<span class="sub">（不含 VAD）</span>' : ''}</span>
         ${r.cer != null ? `<span>CER <b>${pct(r.cer)}</b></span>` : ''}
         ${s.streaming ? `<span>首字出现 <b>${r.first_partial_at != null ? r.first_partial_at.toFixed(1) + ' s' : '—'}</b></span><span>每100ms块 <b>${r.chunk_ms_avg} ms</b>(max ${r.chunk_ms_max})</span>` : ''}
         <span>数字 <b>${r.has_arabic_digits ? '阿拉伯' : '无阿拉伯数字'}</b></span>

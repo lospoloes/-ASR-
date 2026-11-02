@@ -111,7 +111,17 @@ def maybe_quantize(spec: dict, keep_fp32: bool) -> None:
     if dst.exists() or not src.exists():
         return
     log(f"      官方包没有 int8 文件，正在量化 {src.name} -> {dst.name}（约 10~60 秒）...")
-    from onnxruntime.quantization import QuantType, quantize_dynamic
+    try:
+        from onnxruntime.quantization import QuantType, quantize_dynamic
+    except Exception as e:  # noqa: BLE001
+        # 注意：某些 Python/onnxruntime 组合（如 Python 3.14 + onnxruntime 1.31）
+        # 在 import 阶段就会直接 access violation 崩溃，根本进不到这里。
+        raise RuntimeError(
+            f"量化需要能用的 onnxruntime，当前环境导入失败（{type(e).__name__}: {e}）。"
+            "可以用另一个 Python 版本单独建环境跑："
+            "py -3.11 -m venv .venv-quant && .venv-quant\\Scripts\\pip install onnx onnxruntime，"
+            "然后 .venv-quant\\Scripts\\python download_models.py --models <key> --force"
+        ) from e
 
     quantize_dynamic(str(src), str(dst), weight_type=QuantType.QInt8)
     log(f"      量化完成: {dst.stat().st_size / 1048576:.1f} MB")

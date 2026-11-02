@@ -105,8 +105,10 @@ python -m unittest discover -s tests          # 单元测试（不需要模型�
 | `asr_engine.py` | sherpa-onnx 加载和推理（离线 / 流式 / 说话人分离 / VAD 切段），以及 CER 和数字归一化 |
 | `server.py` | FastAPI 后端，提供 `/api/models` 和 `/api/transcribe` |
 | `web/index.html` | 前端页面（单文件，没有外部依赖） |
-| `make_test_audio.py` / `benchmark.py` | 生成测试集 / 批量评测 |
+| `make_test_audio.py` / `benchmark.py` | 生成测试集 / 批量评测（`--refs` 指定参考文本，`--no-vad` 对照固定窗口） |
 | `benchmark_vad.py` | 长音频 VAD 切段 vs 整段的对比测评 |
+| `tools/make_ref_draft.py` | 多模型字级对齐，生成带【】的标准文本初稿（供人工听音校对） |
+| `benchmark/long/` | 长音频标准文本初稿与定稿（`refs.tsv`） |
 | `benchmark/` | 测试句、TTS 生成的测试音频、评测结果 |
 | `docs/selection.md` | 选型调研报告 |
 | `docs/long-audio-report.md` | 长音频实测、VAD 切段、音乐段幻听分析 |

@@ -7,6 +7,7 @@ models/
 __pycache__/
 *.pyc
 .venv/
+.venv-quant/
 venv/
 
 # 系统
@@ -18,3 +19,4 @@ test_audio/
 retry_loop.*
 download_retry*.log
 bench_vad.json
+benchmark/vad_results.json

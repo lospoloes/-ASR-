@@ -143,6 +143,16 @@ def vad_segments(samples: np.ndarray, sr: int = SAMPLE_RATE) -> list[tuple[float
     return segs
 
 
+def compute_vad(samples: np.ndarray, sr: int = SAMPLE_RATE) -> tuple[list[tuple[float, float]], float]:
+    """跑一次 VAD 并计时，返回 (段列表, 耗时 ms)。多个模型共用同一份结果，VAD 只算一次。
+
+    VAD 不可用（未下载模型）时返回 ([], 0.0)。
+    """
+    t0 = time.perf_counter()
+    segs = vad_segments(samples, sr)
+    return segs, round((time.perf_counter() - t0) * 1000, 1)
+
+
 def normalize_text(s: str, norm_numbers: bool = False) -> str:
     s = unicodedata.normalize("NFKC", s)
     if norm_numbers:
@@ -214,10 +224,12 @@ class AsrModel:
     CHUNK_SEC = 30.0      # 每段时长（固定窗口模式）
     CHUNK_OVERLAP = 1.0   # 段间重叠（固定窗口模式）
 
-    def _offline(self, samples: np.ndarray, sr: int, use_vad: bool = True) -> dict:
+    def _offline(self, samples: np.ndarray, sr: int, segs: list | None = None) -> dict:
+        """segs 传入人声段则直接用（VAD 已由调用方算过）；传 [] 则走固定窗口；None 则自己算 VAD。"""
         r = self.recognizer
         dur = len(samples) / sr
-        segs = vad_segments(samples, sr) if use_vad else []
+        if segs is None:
+            segs = vad_segments(samples, sr)
         if segs:
             # VAD 模式：逐人声段识别（前后各扩 0.2s），记录时间戳
             pad = 0.2
@@ -273,8 +285,8 @@ class AsrModel:
         return out
 
     # 流式：按 100ms 小块喂入，模拟实时场景，记录首字出现的音频时刻；
-    # use_vad=True 时用 VAD 门控（只喂人声区，避免音乐段幻听）
-    def _online(self, samples: np.ndarray, sr: int, chunk_sec: float = 0.1, use_vad: bool = True) -> dict:
+    # segs 为段列表时用 VAD 门控（只喂人声区，避免音乐段幻听）
+    def _online(self, samples: np.ndarray, sr: int, chunk_sec: float = 0.1, segs: list | None = None) -> dict:
         r = self.recognizer
         s = r.create_stream()
         step = int(sr * chunk_sec)
@@ -282,18 +294,17 @@ class AsrModel:
         partials = []
         last = ""
         chunk_costs = []
-        # VAD 门控：把人声段合并（间隙 <0.5s 视为连续），只喂人声区
         gate = None
-        if use_vad:
+        if segs is None:
             segs = vad_segments(samples, sr)
-            if segs:
-                merged = []
-                for a, b in segs:
-                    if merged and a - merged[-1][1] < 0.5:
-                        merged[-1][1] = b
-                    else:
-                        merged.append([a, b])
-                gate = merged
+        if segs:
+            merged = []
+            for a, b in segs:
+                if merged and a - merged[-1][1] < 0.5:
+                    merged[-1][1] = b
+                else:
+                    merged.append([a, b])
+            gate = merged
         gate_i = 0
         for start in range(0, len(samples), step):
             t = (start + step) / sr
@@ -328,11 +339,15 @@ class AsrModel:
             "vad": gate is not None,
         }
 
-    def transcribe(self, samples: np.ndarray, sr: int = SAMPLE_RATE, use_vad: bool = True) -> dict:
+    def transcribe(self, samples: np.ndarray, sr: int = SAMPLE_RATE, segs: list | None = None) -> dict:
+        """segs=None 时自己算 VAD；传 [] 关闭 VAD（固定窗口）；传段列表则复用调用方算好的 VAD。
+
+        elapsed_ms / rtf 只包含 ASR 本身的耗时，不含 VAD（VAD 耗时由调用方单独统计）。
+        """
         dur = len(samples) / sr
         t0 = time.perf_counter()
-        out = (self._online(samples, sr, use_vad=use_vad) if self.spec["streaming"]
-               else self._offline(samples, sr, use_vad=use_vad))
+        out = (self._online(samples, sr, segs=segs) if self.spec["streaming"]
+               else self._offline(samples, sr, segs=segs))
         elapsed = time.perf_counter() - t0
         out.update({
             "key": self.key,

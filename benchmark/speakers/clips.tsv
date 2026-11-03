@@ -3,10 +3,10 @@
 # 带 <填链接> 的行会被跳过：找到视频后把链接和起止时间填进去（YouTube/B站链接需要 pip install yt-dlp）
 #
 # ---- 待补充：马斯克、黄仁勋（各找 2 个不同的视频：一个注册，一个测试；选单人讲话、没有背景音乐的片段）
-musk	enroll	<填链接>			马斯克，注册用，约 10s
-musk	test	<填链接>			马斯克，另一个视频，约 10-30s
-jensen	enroll	<填链接>			黄仁勋，注册用，约 10s
-jensen	test	<填链接>			黄仁勋，另一个视频（可以选他讲中文的片段，测跨语种）
+musk	enroll	https://www.bilibili.com/video/BV1PMnC6JE14	9:46	9:56	艾萨克森采访马斯克（BV1PMnC6JE14），单人、无背景音乐
+musk	test	https://www.bilibili.com/video/BV19shU6uEzM	5:06	5:24	央视财经专访马斯克（BV19shU6uEzM），另一个视频
+jensen	enroll	https://www.bilibili.com/video/BV1AbwSzeEKD	31:13	31:23	NVIDIA 官方 GTC 2026 主题演讲（BV1AbwSzeEKD），单人
+jensen	test	https://www.bilibili.com/video/BV16E5K6sE3A	6:28	6:46	卡内基梅隆第 128 届毕业典礼演讲（BV16E5K6sE3A），另一个视频
 #
 # ---- 已验证可下载：tortoise-tts 自带参考音频（目录名对应的演员为社区说法，未核实）
 freeman	enroll	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/freeman/1.wav			tortoise-tts

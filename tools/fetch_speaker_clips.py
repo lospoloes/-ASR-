@@ -11,6 +11,7 @@
 - 链接：YouTube / B 站等视频页（需要 yt-dlp），直接的音频文件链接（.wav/.mp3…），或本地文件路径
 
 依赖：ffmpeg（Windows: winget install ffmpeg；Mac: brew install ffmpeg）；视频网站链接还需要 yt-dlp（pip install yt-dlp）。
+B 站视频页被风控（HTTP 412）时会自动改走 B 站官方接口取音频直链，无需额外配置。
 用法:
     python tools/fetch_speaker_clips.py                         # 用默认清单
     python tools/fetch_speaker_clips.py --list 我的清单.tsv
@@ -26,6 +27,9 @@ import sys
 import tempfile
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bilibili  # noqa: E402 —— B 站 412 时的兜底通道
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LIST = ROOT / "benchmark" / "speakers" / "clips.tsv"
@@ -88,6 +92,13 @@ def fetch(link: str, tmp: Path, start, end, cookies: str) -> tuple[Path, bool]:
         run(cmd + [link])
     except FileNotFoundError as e:
         raise RuntimeError("没有 yt-dlp：pip install yt-dlp") from e
+    except RuntimeError:
+        # B 站网页被风控（HTTP 412）时，改走官方接口取音频直链
+        if not (bilibili.is_bilibili(link)):
+            raise
+        dst = tmp / "src.wav"
+        bilibili.download_section(link, dst, start, end)
+        return dst, True
     files = sorted(tmp.glob("src.*"))
     if not files:
         raise RuntimeError("yt-dlp 没有下载到文件")

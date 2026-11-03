@@ -3,7 +3,7 @@
 示例:
     python download_models.py                     # 默认模型 + 说话人分离模型
     python download_models.py --list              # 列出所有可选模型
-    python download_models.py --models sensevoice,dolphin-base
+    python download_models.py --models sensevoice
     python download_models.py --tts               # 额外下载 TTS（生成测试音频用）
     python download_models.py --hf-mirror         # 国内网络：走 hf-mirror.com
     python download_models.py --source github --gh-proxy https://<你的github加速前缀>/
@@ -194,7 +194,7 @@ def main():
     else:
         specs = [s for s in registry.ASR_MODELS if s["default"]]
     if not args.no_diarization:
-        specs += [s for s in registry.DIARIZATION_MODELS if s not in specs]
+        specs += [s for s in registry.DIARIZATION_MODELS if s not in specs and not s.get("optional")]
     specs += [s for s in registry.VAD_MODELS if s not in specs]
     if args.tts:
         specs += [s for s in registry.TTS_MODELS if s not in specs]

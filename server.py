@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 import asr_engine
 import registry
+import semantic_seg
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -100,7 +101,7 @@ def api_models():
 
 
 def _diar_asr_model():
-    for key in ("sensevoice", "paraformer-zh-small", "dolphin-base"):
+    for key in ("sensevoice", "paraformer-zh-small"):
         if key in STATE["models"]:
             return STATE["models"][key]
     return next(iter(STATE["models"].values()), None)
@@ -108,7 +109,8 @@ def _diar_asr_model():
 
 @app.post("/api/transcribe")
 async def api_transcribe(request: Request, ref: str = "", diarize: int = 0, num_speakers: int = -1,
-                         threshold: float = 0.5, norm_num: int = 1, vad: int = 1):
+                         threshold: float = 0.5, norm_num: int = 1, vad: int = 1,
+                         seg: str = ""):
     data = await request.body()
     if not data:
         raise HTTPException(400, "空音频")
@@ -121,26 +123,48 @@ async def api_transcribe(request: Request, ref: str = "", diarize: int = 0, num_
     duration = len(samples) / sr
     if duration < 0.2:
         raise HTTPException(400, "录音太短（<0.2s）")
+    # seg: semantic（默认）| vad | window；旧参数 vad=0 等价于 window
+    mode = seg if seg in ("semantic", "vad", "window") else ("semantic" if vad else "window")
     results, diar, vad_info = await run_in_threadpool(_run_all, samples, sr, ref, diarize, num_speakers,
-                                                     threshold, bool(norm_num), bool(vad))
+                                                     threshold, bool(norm_num), mode)
     return JSONResponse({"duration": round(duration, 3), "results": results, "diarization": diar,
-                         "ref": ref, "vad": bool(vad), "vad_info": vad_info,
+                         "ref": ref, "vad": mode != "window", "seg_mode": mode, "vad_info": vad_info,
                          "time": time.strftime("%H:%M:%S")})
 
 
+def _semantic_decider():
+    """语义切段的决策模型：优先 SenseVoice（自带标点，切得最准），否则 Paraformer（只靠规则）。"""
+    for key in ("sensevoice", "paraformer-zh-small"):
+        if key in STATE["models"]:
+            m = STATE["models"][key]
+            return m, (lambda x, m=m: m._offline_stream(m.recognizer, asr_engine.SAMPLE_RATE, x)["text"])
+    return None, None
+
+
 def _run_all(samples: np.ndarray, sr: int, ref: str, diarize: int, num_speakers: int, threshold: float,
-             norm_num: bool, use_vad: bool = True):
-    """注意：VAD 只算一次，供所有模型共用；各模型耗时里不含 VAD。"""
+             norm_num: bool, mode: str = "semantic"):
+    """注意：切段只算一次，供所有模型共用；各模型耗时里不含 VAD 和语义决策。"""
     results = []
-    vad_info = {"enabled": bool(use_vad), "ms": 0.0, "n_segments": 0}
+    vad_info = {"enabled": mode != "window", "mode": mode, "ms": 0.0, "n_segments": 0}
     with LOCK:
         segs: list = []
-        if use_vad:
+        if mode == "vad":
             segs, vad_ms = asr_engine.compute_vad(samples, sr)
-            vad_info = {"enabled": True, "ms": vad_ms, "n_segments": len(segs)}
-            if not segs:
-                # 没有 VAD 模型或没检到人声：保持原行为（长音频退回固定窗口）
-                vad_info["note"] = "未检到人声段，退回固定窗口切分"
+            vad_info.update({"ms": vad_ms, "n_segments": len(segs)})
+        elif mode == "semantic":
+            frags, vad_ms = asr_engine.compute_vad(samples, sr, min_silence=0.1)
+            dm, fn = _semantic_decider()
+            vad_info.update({"ms": vad_ms, "n_frags": len(frags)})
+            if frags and fn:
+                utts, st = semantic_seg.segment(samples, frags, fn, sr)
+                segs = semantic_seg.spans(utts)
+                vad_info.update({"n_segments": len(segs), "decide_ms": st["total_ms"], "decider": dm.spec["name"],
+                                 "utterances": [{"start": round(u.start, 2), "end": round(u.end, 2),
+                                                 "text": "".join(u.frag_texts), "n_frags": len(u.frag_ids),
+                                                 "reason": u.reason, "wait": round(u.wait, 2)} for u in utts]})
+        if mode != "window" and not segs:
+            # 没有 VAD 模型或没检到人声：保持原行为（长音频退回固定窗口）
+            vad_info["note"] = "未检到人声段，退回固定窗口切分"
         for key, m in STATE["models"].items():
             try:
                 r = m.transcribe(samples, sr, segs=segs)

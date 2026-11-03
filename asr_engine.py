@@ -92,13 +92,13 @@ def arabic_to_zh(text: str) -> str:
 
 
 # ---------------------------------------------------------------- VAD
-_vad = None
+_vads: dict = {}
 
-def _get_vad():
-    """加载 silero VAD（懒加载，找不到模型文件返回 None）。"""
-    global _vad
-    if _vad is not None:
-        return _vad
+
+def _get_vad(min_silence: float = 0.25):
+    """加载 silero VAD（懒加载，按 min_silence 缓存；找不到模型文件返回 False）。"""
+    if min_silence in _vads:
+        return _vads[min_silence]
     import os
     import sherpa_onnx as so
     # download_models.py 把模型放在 models/silero-vad/；兼容手动放在 models/silero_vad.onnx 的旧布局
@@ -108,20 +108,21 @@ def _get_vad():
         legacy = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "silero_vad.onnx")
         p = str(files["model"]) if files else legacy
     if not os.path.exists(p):
-        _vad = False
-        return _vad
+        _vads[min_silence] = False
+        return False
     cfg = so.VadModelConfig()
     cfg.silero_vad.model = p
     cfg.silero_vad.threshold = 0.5
-    cfg.silero_vad.min_silence_duration = 0.25
+    cfg.silero_vad.min_silence_duration = min_silence
     cfg.silero_vad.min_speech_duration = 0.25
     cfg.sample_rate = SAMPLE_RATE
-    _vad = so.VoiceActivityDetector(cfg, buffer_size_in_seconds=60)
-    return _vad
+    _vads[min_silence] = so.VoiceActivityDetector(cfg, buffer_size_in_seconds=60)
+    return _vads[min_silence]
 
-def vad_segments(samples: np.ndarray, sr: int = SAMPLE_RATE) -> list[tuple[float, float]]:
-    """返回 [(start_sec, end_sec), ...] 人声段；VAD 不可用时返回 []。"""
-    v = _get_vad()
+def vad_segments(samples: np.ndarray, sr: int = SAMPLE_RATE, min_silence: float = 0.25) -> list[tuple[float, float]]:
+    """返回 [(start_sec, end_sec), ...] 人声段；VAD 不可用时返回 []。
+    min_silence：静音多久算一段结束。语义切段用更小的值（0.1）细切，再由语义层合并。"""
+    v = _get_vad(min_silence)
     if not v:
         return []
     v.reset()
@@ -143,13 +144,13 @@ def vad_segments(samples: np.ndarray, sr: int = SAMPLE_RATE) -> list[tuple[float
     return segs
 
 
-def compute_vad(samples: np.ndarray, sr: int = SAMPLE_RATE) -> tuple[list[tuple[float, float]], float]:
+def compute_vad(samples: np.ndarray, sr: int = SAMPLE_RATE, min_silence: float = 0.25) -> tuple[list[tuple[float, float]], float]:
     """跑一次 VAD 并计时，返回 (段列表, 耗时 ms)。多个模型共用同一份结果，VAD 只算一次。
 
     VAD 不可用（未下载模型）时返回 ([], 0.0)。
     """
     t0 = time.perf_counter()
-    segs = vad_segments(samples, sr)
+    segs = vad_segments(samples, sr, min_silence)
     return segs, round((time.perf_counter() - t0) * 1000, 1)
 
 

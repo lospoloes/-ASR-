@@ -79,7 +79,7 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
       <span class="meter"><i id="lvl"></i></span>
       <label title="把 9点/123000 等阿拉伯数字转成汉字读法再算 CER，避免 ITN 输出被误判"><input type="checkbox" id="normnum" checked> 数字归一化</label>
       <label><input type="checkbox" id="diar"> 分角色（说话人分离）</label>
-      <label title="用人声检测切段：长音频提速，且能消除音乐/噪声段的幻听。流式模型开启后只喂人声区"><input type="checkbox" id="vad" checked> VAD 切段</label>
+      <label title="语义：VAD 细切后按文字完整度+停顿长短合并成整句（不会把“我想……明天去公园”切成两句）；VAD：静音 0.25s 即切；固定窗口：30s 切一刀">切段 <select id="segmode"><option value="semantic" selected>语义</option><option value="vad">VAD</option><option value="window">固定窗口</option></select></label>
       <label>人数 <select id="nspk"><option value="-1">自动</option><option>2</option><option>3</option><option>4</option></select></label>
       <label class="btn">上传 WAV<input type="file" id="file" accept=".wav,audio/wav" hidden></label>
       <button class="s" id="replay" disabled>▶ 回放</button>
@@ -93,6 +93,7 @@ kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;paddi
 <section class="panel">
   <h2>转写结果 <span class="sub" id="runinfo"></span></h2>
   <div class="grid" id="results"><div class="muted">还没有结果。按住空格说一句话试试。</div></div>
+  <div id="segbox" style="margin-top:14px"></div>
   <div id="diarbox" style="margin-top:14px"></div>
 </section>
 
@@ -187,7 +188,7 @@ async function send(wav){
   busy = true; const btn = $('#talk'); btn.disabled = true; btn.textContent = '识别中…';
   ['#replay','#again','#dl'].forEach(s => $(s).disabled = false);
   const ref = $('#ref').value.trim();
-  const qs = new URLSearchParams({ref, diarize: $('#diar').checked ? 1 : 0, num_speakers: $('#nspk').value, norm_num: $('#normnum').checked ? 1 : 0, vad: $('#vad').checked ? 1 : 0});
+  const qs = new URLSearchParams({ref, diarize: $('#diar').checked ? 1 : 0, num_speakers: $('#nspk').value, norm_num: $('#normnum').checked ? 1 : 0, seg: $('#segmode').value});
   $('#msg').textContent = '';
   try{
     const r = await fetch('/api/transcribe?' + qs, {method:'POST', body: wav, headers:{'Content-Type':'audio/wav'}});
@@ -223,9 +224,10 @@ function diffHtml(ref, hyp){
 
 function renderResults(d){
   const vi = d.vad_info || {};
-  const vadTxt = vi.enabled
-    ? (vi.n_segments ? ` · VAD 耗时 ${vi.ms} ms（${vi.n_segments} 段）` : ` · VAD ${vi.ms} ms · ${vi.note || '未切出人声'}`)
-    : ' · 未开 VAD（30s 窗口）';
+  const modeName = {semantic: '语义切段', vad: 'VAD 切段', window: '固定窗口'}[vi.mode || (vi.enabled ? 'vad' : 'window')];
+  const vadTxt = !vi.enabled ? ' · 固定 30s 窗口'
+    : vi.n_segments ? ` · ${modeName}：VAD ${vi.ms} ms` + (vi.mode === 'semantic' ? ` + 语义决策 ${vi.decide_ms} ms（${vi.n_frags} 片段 → ${vi.n_segments} 句）` : `（${vi.n_segments} 段）`)
+    : ` · ${modeName}：${vi.note || '未切出人声'}`;
   $('#runinfo').textContent = `· ${d.time} · 音频 ${d.duration.toFixed(2)} s${vadTxt}`;
   const ok = d.results.filter(r => !r.error);
   const bestCer = Math.min(...ok.filter(r => r.cer != null).map(r => r.cer));
@@ -247,7 +249,7 @@ function renderResults(d){
       <div class="row" style="margin:0;justify-content:space-between"><b>${esc(s.name)}</b><span>${tags.join(' ')}</span></div>
       ${text}
       <div class="kv">
-        <span>耗时 <b>${r.elapsed_ms} ms</b></span><span>RTF <b>${r.rtf}</b>${d.vad_info?.enabled ? '<span class="sub">（不含 VAD）</span>' : ''}</span>
+        <span>耗时 <b>${r.elapsed_ms} ms</b></span><span>RTF <b>${r.rtf}</b>${d.vad_info?.enabled ? '<span class="sub">（不含切段）</span>' : ''}</span>
         ${r.cer != null ? `<span>CER <b>${pct(r.cer)}</b></span>` : ''}
         ${s.streaming ? `<span>首字出现 <b>${r.first_partial_at != null ? r.first_partial_at.toFixed(1) + ' s' : '—'}</b></span><span>每100ms块 <b>${r.chunk_ms_avg} ms</b>(max ${r.chunk_ms_max})</span>` : ''}
         <span>数字 <b>${r.has_arabic_digits ? '阿拉伯' : '无阿拉伯数字'}</b></span>
@@ -255,6 +257,12 @@ function renderResults(d){
         ${extra.map(e => `<span>${e}</span>`).join('')}
       </div>${partials}</div>`;
   }).join('');
+
+  const utts = vi.utterances || [];
+  const why = {complete: ['ok', '完整句'], uncertain: ['warn', '不确定'], incomplete: ['bad', '未说完·多等'], max_len: ['warn', '超长截断'], end: ['', '音频结束']};
+  $('#segbox').innerHTML = utts.length ? `<h2>语义切段 <span class="sub">决策模型 ${esc(vi.decider)} · 每句断句前等待的静音时长取决于文字是否说完</span></h2>` +
+    utts.map((u, i) => { const [c, t] = why[u.reason] || ['', u.reason];
+      return `<div class="seg"><span class="spk">第${i + 1}句</span><span class="muted">${u.start.toFixed(1)}–${u.end.toFixed(1)}s${u.n_frags > 1 ? ` · 合并 ${u.n_frags} 片段` : ''}</span><span class="pill ${c}">${t} · 等 ${u.wait}s</span><span>${esc(u.text)}</span></div>`; }).join('') : '';
 
   const dz = d.diarization;
   if (!dz) { $('#diarbox').innerHTML = ''; return; }

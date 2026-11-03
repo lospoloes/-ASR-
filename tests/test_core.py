@@ -68,18 +68,47 @@ class TestVad(unittest.TestCase):
         self.assertGreater(segs[1][0], len(a) / 16000 + 0.5)
 
 
+class TestSemantic(unittest.TestCase):
+    def test_completeness(self):
+        import semantic_seg as ss
+        cases = {"我想。": "incomplete", "如果明天下雨的话。": "incomplete", "因为孩子发烧了。": "incomplete",
+                 "我今天去超市，": "incomplete", "那个": "incomplete", "你知道为什么天空是蓝色的吗": "complete",
+                 "如果明天下雨的话，就提醒我带伞。": "complete", "晚安": "complete", "今天天气不错": "uncertain"}
+        for t, want in cases.items():
+            self.assertEqual(ss.completeness(t), want, t)
+        self.assertTrue(ss.continues("然后买了水果"))
+        self.assertTrue(ss.continues("嗯，所以呢"))
+        self.assertFalse(ss.continues("再见"))
+        self.assertFalse(ss.continues("明天几点出发"))
+
+    def test_segment_merges_by_meaning(self):
+        import semantic_seg as ss
+        # 4 个片段：「我想。」| 0.5s |「明天去公园。」| 0.5s |「今天好累啊」| 0.4s |「然后想睡觉」
+        frags = [(0.0, 1.0), (1.5, 3.0), (3.5, 4.5), (4.9, 6.0)]
+        texts = iter(["我想。", "明天去公园。", "今天好累啊。", "然后想睡觉。"])
+        utts, _ = ss.segment(np.zeros(16000 * 7, np.float32), frags, lambda x: next(texts))
+        self.assertEqual([u.frag_ids for u in utts], [[0, 1], [2, 3]])
+        self.assertEqual(utts[1].rejoined, 1)
+        # 纯声学 0.25s 阈值会切成 4 段
+        self.assertEqual(len(ss.fixed_gap_merge(frags, 0.25)), 4)
+
+
 class TestRegistry(unittest.TestCase):
     def test_specs(self):
         keys = [s["key"] for s in registry.all_specs()]
         self.assertEqual(len(keys), len(set(keys)))
         defaults = [s for s in registry.ASR_MODELS if s["default"]]
-        self.assertTrue(4 <= len(defaults) <= 7)
+        self.assertEqual([s["key"] for s in defaults], ["sensevoice", "paraformer-zh-small"])
         for s in registry.ASR_MODELS:
             for k in ("name", "loader", "files", "doc_size_mb", "size_source", "public_cer", "license", "link"):
                 self.assertIn(k, s, f"{s['key']} 缺 {k}")
 
     def test_resolve_prefers_top_level_and_int8(self):
-        spec = registry.get_spec("zipformer-bilingual-small")
+        spec = {"key": "fake-transducer", "files": {
+            "encoder": ["encoder*.int8.onnx", "encoder*.onnx"],
+            "decoder": ["decoder-epoch-99-avg-1.onnx", "decoder.onnx"],
+            "joiner": ["joiner*.int8.onnx", "joiner*.onnx"],
+            "tokens": ["tokens.txt"]}}
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / spec["key"]
             (root / "64").mkdir(parents=True)

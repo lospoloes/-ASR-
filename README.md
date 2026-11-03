@@ -1,6 +1,6 @@
 # 端侧语音转写（ASR）模型对比 Demo
 
-用于陪伴机器人端侧 ASR 选型。项目用 sherpa-onnx 在本地 CPU 上同时加载 7 个小体积模型。网页上按住空格说一句话，**所有模型会转写同一段音频**，同一个页面里能看到各模型的结果、耗时、RTF、CER、参数和需求对照。
+用于陪伴机器人端侧语音转写。项目用 sherpa-onnx 在本地 CPU 上加载已选定的两个模型：**SenseVoice-Small int8** 和 **Paraformer-zh-small int8**。网页上按住空格说一句话，两个模型转写同一段音频，同一个页面里能看到结果、耗时、RTF、CER，以及语义切段和分角色的结果。
 
 - 选型调研、实测数据和推荐结论：**[docs/selection.md](docs/selection.md)**
 - 长音频实测、VAD 切段与音乐段幻听：**[docs/long-audio-report.md](docs/long-audio-report.md)**
@@ -49,7 +49,7 @@ python server.py
 ## 下载模型
 
 ```bash
-python download_models.py                 # 默认：7 个 ASR 模型 + 分角色模型，约 600MB
+python download_models.py                 # 默认：SenseVoice + Paraformer + VAD + 分角色模型，约 350MB
 python download_models.py --list          # 查看全部可选模型
 python download_models.py --hf-mirror     # 国内网络推荐：走 hf-mirror.com
 python download_models.py --models sensevoice,paraformer-zh-small   # 只下指定模型
@@ -87,6 +87,52 @@ python benchmark_vad.py test_audio/lei-jun-test.wav
 
 **长音频必须配 VAD**：离线模型音频超过 31s 时会自动按 VAD 人声段切段推理（没有 VAD 模型时退回 30s 固定窗口切段），见 [docs/long-audio-report.md](docs/long-audio-report.md)。
 
+## 语义切段
+
+网页上「切段」默认选「语义」：VAD 先细切，再根据识别出的文字判断这句话说完没有（「我想……」「然后……」算没说完），决定等多久静音再断句。结果下方会列出每一句的断句依据和等待时长。
+
+```bash
+python benchmark_semantic.py         # 语义切段 vs 纯声学切段，输出 benchmark/results/semantic.md
+```
+
+实现和评测见 [docs/semantic-seg.md](docs/semantic-seg.md)。
+
+## 声纹注册 + 说话人识别（名人声音实验）
+
+先告诉系统"这是谁的声音"（注册），再让它认人。名人音频涉及版权和生物特征，**只放在 `test_audio/`（不会被提交）**。
+
+1. 准备工具（Mac）：
+
+```bash
+brew install ffmpeg
+pip install yt-dlp
+```
+
+2. 下载音频片段（每段 10–30 秒即可，注册和测试**必须来自不同的视频**）：
+
+```bash
+yt-dlp -x --audio-format wav --download-sections "*00:01:00-00:01:30" -o "test_audio/speakers/enroll/马斯克/%(id)s.%(ext)s" <视频链接>
+```
+
+3. 按下面的目录放好（文件名随意，wav/mp3/m4a 都行）：
+
+```
+test_audio/speakers/
+  enroll/马斯克/*.wav     enroll/黄仁勋/*.wav     enroll/雷军/*.wav    ← 注册，每人约 10s
+  test/马斯克/*.wav       test/黄仁勋/*.wav       test/雷军/*.wav      ← 测试，换一个视频
+  test/unknown/*.wav                                                  ← 没注册过的人，测会不会认错
+  sources.tsv                                                         ← 记录：文件<TAB>链接<TAB>起止时间
+```
+
+4. 运行：
+
+```bash
+python download_models.py --models speaker-embedding-en --no-diarization   # 可选：英文声纹模型做对照
+python speaker_id.py
+```
+
+输出 `benchmark/results/speaker_id.md`：整条识别、1/2/3/5 秒片段的准确率、推荐阈值（等错误率 EER），以及把各人音频按 A→B→A→B 拼接后逐段认人的结果。
+
 ## 常用参数
 
 ```bash
@@ -107,6 +153,9 @@ python -m unittest discover -s tests          # 单元测试（不需要模型�
 | `web/index.html` | 前端页面（单文件，没有外部依赖） |
 | `make_test_audio.py` / `benchmark.py` | 生成测试集 / 批量评测（`--refs` 指定参考文本，`--no-vad` 对照固定窗口） |
 | `benchmark_vad.py` | 长音频 VAD 切段 vs 整段的对比测评 |
+| `semantic_seg.py` / `benchmark_semantic.py` | 语义切段 / 语义切段评测 |
+| `make_semantic_testset.py` | 生成语义切段测试集（句内思考停顿 + 长短不一的句间停顿，句子边界已知） |
+| `speaker_id.py` | 声纹注册 + 说话人识别实验 |
 | `tools/make_ref_draft.py` | 多模型字级对齐，生成带【】的标准文本初稿（供人工听音校对） |
 | `benchmark/long/` | 长音频标准文本初稿与定稿（`refs.tsv`） |
 | `benchmark/` | 测试句、TTS 生成的测试音频、评测结果 |

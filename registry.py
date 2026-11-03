@@ -40,104 +40,6 @@ ASR_MODELS: list[dict] = [
         "default_reason": "会议定的性能基准",
     },
     {
-        "key": "zipformer-ctc-small-zh",
-        "name": "Zipformer-CTC small 流式 int8",
-        "loader": "online_zipformer2_ctc",
-        "streaming": True,
-        "files": {"model": ["model.int8.onnx", "model.onnx"], "tokens": ["tokens.txt"]},
-        "hf_repo": "csukuangfj/sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01",
-        "hf_verified": False,
-        "hf_allow": ["model.int8.onnx", "tokens.txt", "bbpe.model"],
-        "gh_url": f"{GH}/asr-models/sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01.tar.bz2",
-        "doc_size_mb": 25,
-        "size_source": "sherpa 文档 online-ctc/zipformer-ctc-models.html（model.int8.onnx 25M）",
-        "languages": "中文",
-        "number_format": "汉字数字（测试集实测）",
-        "public_cer": "未核实（官方文档未给出）",
-        "license": "Apache-2.0（icefall/sherpa-onnx；模型卡未核实）",
-        "link": f"{DOC}/pretrained_models/online-ctc/zipformer-ctc-models.html",
-        "extras": "",
-        "default": True,
-        "default_reason": "最小的流式中文模型之一",
-    },
-    {
-        "key": "zipformer-zh-14m",
-        "name": "Zipformer 流式 zh-14M int8",
-        "loader": "online_transducer",
-        "streaming": True,
-        "files": {
-            "encoder": ["encoder*.int8.onnx", "encoder*.onnx"],
-            # 实测：int8 decoder 会导致 transducer 输出被截断，必须用 fp32 decoder（官方示例也是这样配的）
-            "decoder": ["decoder-epoch-99-avg-1.onnx", "decoder.onnx"],
-            "joiner": ["joiner*.int8.onnx", "joiner*.onnx"],
-            "tokens": ["tokens.txt"],
-        },
-        "hf_repo": "csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23",
-        "hf_verified": True,
-        "hf_allow": ["encoder*.int8.onnx", "joiner*.int8.onnx", "decoder-epoch-99-avg-1.onnx", "tokens.txt"],
-        "gh_url": f"{GH}/asr-models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2",
-        "doc_size_mb": 29.9,
-        "size_source": "sherpa 文档 online-transducer（enc int8 21M + dec fp32 7.2M + joiner int8 1.7M；全 int8 为 24.5M，但 int8 decoder 实测会截断输出）",
-        "languages": "中文（WenetSpeech 训练）",
-        "number_format": "汉字数字（测试集实测）",
-        "public_cer": "未核实",
-        "license": "Apache-2.0（icefall；模型卡未核实）",
-        "link": f"{DOC}/pretrained_models/online-transducer/zipformer-transducer-models.html",
-        "extras": "14M 参数，超低资源",
-        "default": True,
-        "default_reason": "下限参照：极小体积能做到什么程度",
-    },
-    {
-        "key": "zipformer-bilingual-small",
-        "name": "Zipformer 流式中英双语 small int8",
-        "loader": "online_transducer",
-        "streaming": True,
-        "files": {
-            "encoder": ["encoder*.int8.onnx", "encoder*.onnx"],
-            # 实测：int8 decoder 会导致 transducer 输出被截断，必须用 fp32 decoder（官方示例也是这样配的）
-            "decoder": ["decoder-epoch-99-avg-1.onnx", "decoder.onnx"],
-            "joiner": ["joiner*.int8.onnx", "joiner*.onnx"],
-            "tokens": ["tokens.txt"],
-        },
-        "hf_repo": "csukuangfj/sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16",
-        "hf_verified": False,
-        "hf_allow": ["encoder*.int8.onnx", "joiner*.int8.onnx", "decoder-epoch-99-avg-1.onnx", "tokens.txt", "bpe.model"],
-        "gh_url": f"{GH}/asr-models/sherpa-onnx-streaming-zipformer-small-bilingual-zh-en-2023-02-16.tar.bz2",
-        "doc_size_mb": 58.1,
-        "size_source": "sherpa 文档 online-transducer（enc int8 41M + dec fp32 14M + joiner int8 3.1M；全 int8 为 47.5M，但 int8 decoder 实测会截断输出）",
-        "languages": "中英混说",
-        "number_format": "汉字数字（测试集实测）",
-        "public_cer": "未核实（社区贡献，内部数据训练）",
-        "license": "未核实（社区贡献模型）",
-        "link": f"{DOC}/pretrained_models/online-transducer/zipformer-transducer-models.html",
-        "extras": "",
-        "default": True,
-        "default_reason": "流式 + 中英混说 + <50MB",
-    },
-    {
-        "key": "zipformer-ctc-multi-zh-hans",
-        "name": "Zipformer-CTC 流式 multi-zh-hans int8",
-        "loader": "online_zipformer2_ctc",
-        "streaming": True,
-        "files": {"model": ["ctc*.int8.onnx", "*.int8.onnx", "ctc*.onnx"], "tokens": ["tokens.txt"]},
-        "hf_repo": "csukuangfj/sherpa-onnx-streaming-zipformer-ctc-multi-zh-hans-2023-12-13",
-        "hf_verified": False,
-        "hf_allow": ["*.int8.onnx", "tokens.txt", "bpe.model"],
-        "gh_url": f"{GH}/asr-models/sherpa-onnx-streaming-zipformer-ctc-multi-zh-hans-2023-12-13.tar.bz2",
-        "doc_size_mb": 68,
-        "size_source": "sherpa 文档 online-ctc 列出 int8 68M；但当前 GitHub 压缩包只含 fp32（252MB），下载脚本会用 onnxruntime 动态量化生成 int8（实测 66MB）",
-        "quantize": {"src": "ctc-epoch-20-avg-1-chunk-16-left-128.onnx",
-                     "dst": "ctc-epoch-20-avg-1-chunk-16-left-128.int8.onnx"},
-        "languages": "中文（14k 小时多数据集）",
-        "number_format": "汉字数字（测试集实测）",
-        "public_cer": "未核实（icefall multi_zh-hans RESULTS.md 未单列该版本）",
-        "license": "Apache-2.0（icefall；模型卡未核实）",
-        "link": f"{DOC}/pretrained_models/online-ctc/zipformer-ctc-models.html",
-        "extras": "训练数据量大（14k h），流式中精度候选",
-        "default": True,
-        "default_reason": "流式 + <100MB + 训练数据量大",
-    },
-    {
         "key": "paraformer-zh-small",
         "name": "Paraformer-zh-small int8",
         "loader": "paraformer",
@@ -157,48 +59,6 @@ ASR_MODELS: list[dict] = [
         "extras": "无时间戳",
         "default": True,
         "default_reason": "<100MB 离线 + 方言",
-    },
-    {
-        "key": "dolphin-base",
-        "name": "Dolphin base CTC int8",
-        "loader": "dolphin_ctc",
-        "streaming": False,
-        "files": {"model": ["model.int8.onnx", "model.onnx"], "tokens": ["tokens.txt"]},
-        "hf_repo": "csukuangfj/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02",
-        "hf_verified": False,
-        "hf_allow": ["model.int8.onnx", "tokens.txt"],
-        "gh_url": f"{GH}/asr-models/sherpa-onnx-dolphin-base-ctc-multi-lang-int8-2025-04-02.tar.bz2",
-        "doc_size_mb": 99,
-        "size_source": "sherpa 文档 Dolphin/pretrained.html（model.int8.onnx 99M，total 100M）",
-        "languages": "40 种东方语言 + 22 种中文方言",
-        "number_format": "汉字数字（测试集实测）；粤语输出繁体字",
-        "public_cer": "未核实（官方 README 无 base 版中文 CER 表）",
-        "license": "Apache-2.0（Dolphin 官方 README）",
-        "link": f"{DOC}/Dolphin/pretrained.html",
-        "extras": "方言覆盖最广",
-        "default": True,
-        "default_reason": "方言能力突出，体积刚好 ~100MB",
-    },
-    {
-        "key": "wenet-wenetspeech",
-        "name": "WeNet WenetSpeech 流式 int8（实验）",
-        "loader": "online_wenet_ctc",
-        "streaming": True,
-        "files": {"model": ["model-streaming.int8.onnx", "*streaming*.int8.onnx"], "tokens": ["tokens.txt"]},
-        "hf_repo": "csukuangfj/sherpa-onnx-zh-wenet-wenetspeech",
-        "hf_verified": True,
-        "hf_allow": ["*streaming*.int8.onnx", "tokens.txt"],
-        "gh_url": None,
-        "doc_size_mb": 83,
-        "size_source": "第三方实测 83MB（参考起点提供，HF 文件列表调研时无法访问，未核实）",
-        "languages": "中文",
-        "number_format": "未核实",
-        "public_cer": "未核实",
-        "license": "Apache-2.0（WeNet；模型卡未核实）",
-        "link": f"{DOC}/pretrained_models/wenet/all-models.html",
-        "extras": "仓库内文件名未核实，只有 HF 一个来源",
-        "default": False,
-        "default_reason": "可选，见 selection.md",
     },
 ]
 
@@ -227,6 +87,21 @@ DIARIZATION_MODELS: list[dict] = [
         "size_source": "未核实（文档未列体积）",
     },
 ]
+
+
+# 英文声纹模型（可选，与中文 3D-Speaker 对照；名人声纹实验里 Musk / 黄仁勋 说英文）
+DIARIZATION_MODELS.append({
+    "key": "speaker-embedding-en",
+    "name": "NeMo TitaNet small（英文声纹，可选）",
+    "files": {"model": ["nemo_en_titanet_small.onnx"]},
+    "hf_repo": "csukuangfj/speaker-embedding-models",
+    "hf_verified": False,
+    "hf_allow": ["nemo_en_titanet_small.onnx"],
+    "gh_url": f"{GH}/speaker-recongition-models/nemo_en_titanet_small.onnx",
+    "doc_size_mb": None,
+    "size_source": "未核实（文档未列体积）",
+    "optional": True,
+})
 
 
 # TTS：用于 make_test_audio.py 生成带标准答案的测试音频（也作为“音色定制”方向的初步验证）
@@ -274,8 +149,24 @@ VAD_MODELS: list[dict] = [
 ]
 
 
+# 标点：给没有标点的 Paraformer 输出加标点，可选（语义切段可以不用它，只靠规则）
+PUNCT_MODELS: list[dict] = [
+    {
+        "key": "punct-ct-transformer",
+        "name": "CT-Transformer 中英标点 int8",
+        "files": {"model": ["model.int8.onnx"]},
+        "hf_repo": "csukuangfj/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8",
+        "hf_verified": False,
+        "hf_allow": ["model.int8.onnx"],
+        "gh_url": f"{GH}/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8.tar.bz2",
+        "doc_size_mb": 72,
+        "size_source": "sherpa 文档 punctuation/pretrained_models.html（model.int8.onnx 72M）",
+    },
+]
+
+
 def all_specs() -> list[dict]:
-    return ASR_MODELS + DIARIZATION_MODELS + TTS_MODELS + VAD_MODELS
+    return ASR_MODELS + DIARIZATION_MODELS + TTS_MODELS + VAD_MODELS + PUNCT_MODELS
 
 
 def get_spec(key: str) -> dict:

@@ -29,7 +29,7 @@ import registry  # noqa: E402
 
 # 骨架 + 参与对齐的候选模型。顺序有意义：第一个是骨架。
 SKELETON = "sensevoice"
-OTHERS = ["paraformer-zh-small", "dolphin-base", "zipformer-ctc-multi-zh-hans"]
+OTHERS = ["paraformer-zh-small"]  # 其余候选已从注册表移除
 
 
 def strip_punct(s: str) -> str:

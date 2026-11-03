@@ -1,0 +1,41 @@
+# 说话人音频清单：人名	用途(enroll/test)	链接或本地文件	开始	结束	备注
+# 规则：每人 enroll 约 10s；test 必须来自和 enroll【不同的视频】；人名从没出现在 enroll 里的算“陌生人”
+# 带 <填链接> 的行会被跳过：找到视频后把链接和起止时间填进去（YouTube/B站链接需要 pip install yt-dlp）
+#
+# ---- 待补充：马斯克、黄仁勋（各找 2 个不同的视频：一个注册，一个测试；选单人讲话、没有背景音乐的片段）
+musk	enroll	<填链接>			马斯克，注册用，约 10s
+musk	test	<填链接>			马斯克，另一个视频，约 10-30s
+jensen	enroll	<填链接>			黄仁勋，注册用，约 10s
+jensen	test	<填链接>			黄仁勋，另一个视频（可以选他讲中文的片段，测跨语种）
+#
+# ---- 已验证可下载：tortoise-tts 自带参考音频（目录名对应的演员为社区说法，未核实）
+freeman	enroll	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/freeman/1.wav			tortoise-tts
+deniro	enroll	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/deniro/1.wav			tortoise-tts
+tom	enroll	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/tom/1.wav			tortoise-tts
+halle	enroll	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/halle/1.wav			tortoise-tts
+jlaw	enroll	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/jlaw/1.wav			tortoise-tts
+emma	enroll	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/emma/1.wav			tortoise-tts
+emma	enroll	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/emma/2.wav			tortoise-tts（第 1 段只有 6s，补一段）
+freeman	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/freeman/2.wav			tortoise-tts
+freeman	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/freeman/3.wav			tortoise-tts
+deniro	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/deniro/2.wav			tortoise-tts
+deniro	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/deniro/3.wav			tortoise-tts
+deniro	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/deniro/4.wav			tortoise-tts
+tom	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/tom/2.wav			tortoise-tts
+tom	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/tom/3.wav			tortoise-tts
+tom	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/tom/4.wav			tortoise-tts
+halle	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/halle/2.wav			tortoise-tts
+halle	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/halle/3.wav			tortoise-tts
+jlaw	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/jlaw/2.wav			tortoise-tts
+jlaw	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/jlaw/3.wav			tortoise-tts
+jlaw	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/jlaw/4.wav			tortoise-tts
+emma	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/emma/3.wav			tortoise-tts
+daniel	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/daniel/1.wav			陌生人（不注册）
+daniel	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/daniel/2.wav			陌生人（不注册）
+daniel	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/daniel/3.wav			陌生人（不注册）
+daniel	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/daniel/4.wav			陌生人（不注册）
+weaver	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/weaver/1.wav			陌生人（不注册）
+weaver	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/weaver/2.wav			陌生人（不注册）
+weaver	test	https://raw.githubusercontent.com/neonbjb/tortoise-tts/main/tortoise/voices/weaver/3.wav			陌生人（不注册）
+leijun	enroll	https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/lei-jun-test.wav	0:30	1:00	雷军演讲（sherpa-onnx 测试音频）
+leijun	test	https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/lei-jun-test.wav	3:20	4:00	同一场演讲的另一时段：注意不是不同视频，结果偏乐观

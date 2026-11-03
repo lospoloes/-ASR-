@@ -8,9 +8,11 @@
 
 ## 快速开始
 
-需要 Python 3.10–3.13（3.14 理论上也行），以及 2GB 左右的磁盘空间。**项目路径里不要有中文或空格**，否则 onnxruntime 在 Windows 上可能读不到模型。
+需要 Python 3.10–3.13（**不要用 3.14**：onnxruntime 在 3.14 下会直接崩溃），以及 2GB 左右的磁盘空间。**项目路径里不要有中文或空格**，否则 onnxruntime 在 Windows 上可能读不到模型。
 
 ### Windows（公司电脑）
+
+公司电脑的完整操作步骤（含名人声纹实验）见 **[docs/company-machine-guide.md](docs/company-machine-guide.md)**。
 
 最省事的方法是双击 `run_windows.bat`。它会依次完成建虚拟环境、装依赖、下载模型、启动服务。
 
@@ -101,27 +103,19 @@ python benchmark_semantic.py         # 语义切段 vs 纯声学切段，输出 
 
 先告诉系统"这是谁的声音"（注册），再让它认人。名人音频涉及版权和生物特征，**只放在 `test_audio/`（不会被提交）**。
 
-1. 准备工具（Mac）：
+1. 准备工具：需要 ffmpeg 和 yt-dlp。Windows 见 [公司电脑操作手册](docs/company-machine-guide.md) 第 4.1 节；Mac：
 
 ```bash
 brew install ffmpeg
-pip install yt-dlp
+python3 -m pip install yt-dlp
 ```
 
-2. 下载音频片段（每段 10–30 秒即可，注册和测试**必须来自不同的视频**）：
+2. 在 `benchmark/speakers/clips.tsv` 里填好每段音频：人名、用途（enroll 注册 / test 测试）、视频链接、起止时间。注册和测试**必须来自不同的视频**。清单里已经填好了 6 位好莱坞演员和雷军的公开音频，马斯克、黄仁勋两人留空待填。
+
+3. 自动下载并截取，放进 `test_audio/speakers/`（不会被提交），来源记录到 `sources.tsv`：
 
 ```bash
-yt-dlp -x --audio-format wav --download-sections "*00:01:00-00:01:30" -o "test_audio/speakers/enroll/马斯克/%(id)s.%(ext)s" <视频链接>
-```
-
-3. 按下面的目录放好（文件名随意，wav/mp3/m4a 都行）：
-
-```
-test_audio/speakers/
-  enroll/马斯克/*.wav     enroll/黄仁勋/*.wav     enroll/雷军/*.wav    ← 注册，每人约 10s
-  test/马斯克/*.wav       test/黄仁勋/*.wav       test/雷军/*.wav      ← 测试，换一个视频
-  test/unknown/*.wav                                                  ← 没注册过的人，测会不会认错
-  sources.tsv                                                         ← 记录：文件<TAB>链接<TAB>起止时间
+python tools/fetch_speaker_clips.py
 ```
 
 4. 运行：
@@ -156,6 +150,7 @@ python -m unittest discover -s tests          # 单元测试（不需要模型�
 | `semantic_seg.py` / `benchmark_semantic.py` | 语义切段 / 语义切段评测 |
 | `make_semantic_testset.py` | 生成语义切段测试集（句内思考停顿 + 长短不一的句间停顿，句子边界已知） |
 | `speaker_id.py` | 声纹注册 + 说话人识别实验 |
+| `tools/fetch_speaker_clips.py` / `benchmark/speakers/clips.tsv` | 按清单下载、截取说话人音频 |
 | `tools/make_ref_draft.py` | 多模型字级对齐，生成带【】的标准文本初稿（供人工听音校对） |
 | `benchmark/long/` | 长音频标准文本初稿与定稿（`refs.tsv`） |
 | `benchmark/` | 测试句、TTS 生成的测试音频、评测结果 |

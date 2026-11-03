@@ -7,7 +7,8 @@ set PYTHONUTF8=1
 
 if not exist .venv\Scripts\python.exe (
     echo [1/4] Creating virtual env .venv ...
-    py -3 -m venv .venv 2>nul || python -m venv .venv
+    REM Prefer Python 3.12/3.11: onnxruntime crashes on import under Python 3.14 (int8 quantization step)
+    py -3.12 -m venv .venv 2>nul || py -3.11 -m venv .venv 2>nul || py -3 -m venv .venv 2>nul || python -m venv .venv
     if errorlevel 1 ( echo Python 3.10+ not found. Install from https://www.python.org/downloads/ and tick "Add to PATH". & pause & exit /b 1 )
 )
 echo [2/4] Installing dependencies ...

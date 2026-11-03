@@ -131,7 +131,7 @@ python download_models.py --models speaker-embedding-en --no-diarization   # 可
 python speaker_id.py
 ```
 
-输出 `benchmark/results/speaker_id.md`：整条识别、1/2/3/5 秒片段的准确率、推荐阈值（等错误率 EER），以及把各人音频按 A→B→A→B 拼接后逐段认人的结果。
+输出 `benchmark/results/speaker_id.md`：整条识别、1/2/3/5 秒片段的准确率、推荐阈值（等错误率 EER），以及多人拼接音频里"先分角色、再认人"的结果。已做过一轮实验（6 位好莱坞演员 + 雷军），结论见 [docs/speaker-id.md](docs/speaker-id.md)。
 
 ## 常用参数
 

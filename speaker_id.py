@@ -13,7 +13,8 @@
     1. 整条识别：每条测试音频 → 最像谁、相似度多少；陌生人应被拒绝
     2. 时长鲁棒性：测试音频切成 1/2/3/5s 小段，看多短还能认准
     3. 阈值扫描：认错率（FAR）/ 拒认率（FRR）随阈值变化，给出等错误率 EER 和推荐阈值
-    4. 拼接场景（mentor 的设想）：把测试音频按 A,B,A,B… 拼起来，VAD 切段后逐段认人，对照真实时间线
+    4. 拼接场景（mentor 的设想）：各人约 10s 依次拼接（间隔 0.5s，混入一个陌生人），
+       先用分角色模型找“换人”的边界再逐段认人，按时长统计标对的比例
     5. 模型对比：中文 3D-Speaker（默认）vs 英文 NeMo TitaNet（若已下载）
 
 用法:
@@ -170,8 +171,12 @@ def run(model_name: str, emb: Embedder, enroll: dict, tests: list, threshold: fl
         ok2 = sum(identify(emb(x), enrolled, t)[0] == (tr if tr in enrolled else "陌生人") for tr, _, x in tests)
         lines += [f"按推荐阈值 {t:.2f} 重算整条准确率：**{ok2}/{len(tests)}**（当前阈值 {threshold} 时为 {correct}/{len(tests)}）", ""]
 
-    # 4. 拼接场景：A,B,A,B… 每段 10s，VAD 切段后逐段认人
+    # 4. 拼接场景（mentor 的设想）：各人 10s 依次拼接，中间只隔 0.5s，再混入一个陌生人
+    #    VAD 切段会把相邻两人粘在一起（0.5s 停顿不够），所以要先找“换人”的边界：
+    #    A) 分角色模型（pyannote 分段 + 聚类）切出说话人段 → 每段认人（实际产品的做法）
+    #    B) 对照：1.5s 滑动窗口逐窗认人
     known = [(tr, x) for tr, _, x in tests if tr in enrolled]
+    strangers = [x for tr, _, x in tests if tr not in enrolled]
     if len({tr for tr, _ in known}) >= 2:
         pieces, timeline, t0 = [], [], 0.0
         by = {}
@@ -179,26 +184,63 @@ def run(model_name: str, emb: Embedder, enroll: dict, tests: list, threshold: fl
             by.setdefault(tr, []).append(x)
         order = sorted(by)
         for r in range(2):
-            for tr in order:
-                src = by[tr][r % len(by[tr])]
-                seg = src[r * 10 * SR:(r + 1) * 10 * SR] if len(src) >= (r + 1) * 10 * SR else src[:10 * SR]
+            plan = [(tr, by[tr][r % len(by[tr])]) for tr in order]
+            if strangers:
+                plan.append(("陌生人", strangers[r % len(strangers)]))
+            for tr, src in plan:
+                seg = src[:10 * SR] if r == 0 or len(src) < 20 * SR else src[10 * SR:20 * SR]
                 pieces += [seg, np.zeros(SR // 2, np.float32)]
                 timeline.append((t0, t0 + len(seg) / SR, tr))
                 t0 += len(seg) / SR + 0.5
         mix = np.concatenate(pieces)
-        segs, _ = asr_engine.compute_vad(mix)
-        lines += ["### 4. 拼接场景（" + "→".join(f"{tr}" for _, _, tr in timeline) + f"，共 {len(mix) / SR:.0f}s）", "",
-                  "| VAD 段 | 真实身份 | 识别结果 | 相似度 |", "|---|---|---|---|"]
-        ok = n = 0
-        for a, b in segs:
-            if b - a < 0.5:
-                continue
-            truth = max(timeline, key=lambda s: max(0, min(b, s[1]) - max(a, s[0])))[2]
-            pred, best, _ = identify(emb(mix[int(a * SR):int(b * SR)]), enrolled, threshold)
-            n += 1
-            ok += pred == truth
-            lines.append(f"| {a:.1f}–{b:.1f}s | {truth} | {'✅' if pred == truth else '❌'} {pred} | {best:.3f} |")
-        lines += ["", f"拼接场景逐段准确率：**{ok}/{n}**", ""]
+
+        def truth_at(t):
+            for a, b, tr in timeline:
+                if a <= t < b:
+                    return tr
+            return None
+
+        def time_acc(labels):  # labels: [(a, b, pred)]，按 0.1s 帧统计说话时间里标对的比例
+            ok = tot = 0
+            for k in range(int(t0 * 10)):
+                t = k / 10 + 0.05
+                tr = truth_at(t)
+                if tr is None:
+                    continue
+                tot += 1
+                pred = next((p for a, b, p in labels if a <= t < b), "未检出")
+                ok += pred == tr
+            return ok / max(tot, 1)
+
+        lines += ["### 4. 拼接场景", "",
+                  "顺序：" + " → ".join(tr for _, _, tr in timeline) + f"（每人约 10s，间隔 0.5s，共 {t0:.0f}s）", ""]
+        seg_f = registry.resolve_files(registry.get_spec("pyannote-seg"))
+        emb_f = registry.resolve_files(registry.get_spec("speaker-embedding"))
+        if seg_f and emb_f:
+            dz = asr_engine.Diarizer(seg_f["model"], emb_f["model"])
+            dsegs, _ = dz.run(mix)
+            labels = []
+            rows = []
+            for d in dsegs:
+                a, b = d["start"], d["end"]
+                if b - a < 0.5:
+                    continue
+                pred, best, _ = identify(emb(mix[int(a * SR):int(b * SR)]), enrolled, threshold)
+                labels.append((a, b, pred))
+                mid_truth = truth_at((a + b) / 2) or "（静音）"
+                rows.append(f"| {a:.1f}–{b:.1f}s | {mid_truth} | {'✅' if pred == mid_truth else '❌'} {pred} | {best:.3f} |")
+            lines += [f"**A. 分角色切段 + 认人：按时长计准确率 {time_acc(labels) * 100:.1f}%**（{len(labels)} 段）", "",
+                      "| 分角色段 | 真实身份（段中点） | 识别结果 | 相似度 |", "|---|---|---|---|"] + rows + [""]
+        win, hop = 1.5, 0.5
+        labels = []
+        k = 0.0
+        while k + win <= t0:
+            x = mix[int(k * SR):int((k + win) * SR)]
+            if np.abs(x).max() > 1e-3:
+                pred, _, _ = identify(emb(x), enrolled, threshold)
+                labels.append((k + (win - hop) / 2, k + (win + hop) / 2, pred))
+            k += hop
+        lines += [f"**B. 对照：{win}s 滑动窗口逐窗认人：按时长计准确率 {time_acc(labels) * 100:.1f}%**", ""]
 
 
 def main():

@@ -245,19 +245,22 @@ class AsrModel:
                 res = self._offline_stream(r, sr, samples[s0:s1])
                 if res["text"]:
                     texts.append(res["text"])
-                    cuts.append({"start": round(a, 2), "end": round(b, 2)})
+                    cuts.append({"start": round(a, 2), "end": round(b, 2), "text": res["text"]})
             out = {"text": "".join(texts), "vad": True, "n_segments": len(cuts), "cuts": cuts}
             for k in ("lang", "emotion", "event"):
                 if texts and k in res:
                     out[k] = res[k]
             return out
         if dur <= self.CHUNK_SEC + self.CHUNK_OVERLAP:
-            return self._offline_stream(r, sr, samples)
+            r1 = self._offline_stream(r, sr, samples)
+            r1["cuts"] = [{"start": 0.0, "end": round(dur, 2), "text": r1["text"]}]
+            return r1
         # 固定窗口模式（无 VAD）
         step = int(sr * (self.CHUNK_SEC - self.CHUNK_OVERLAP))
         win = int(sr * self.CHUNK_SEC)
         texts = []
         attrs = {}
+        cuts = []
         for start in range(0, len(samples), step):
             seg = samples[start:start + win]
             if len(seg) < sr // 2:  # 丢弃 <0.5s 的尾部碎段
@@ -265,10 +268,13 @@ class AsrModel:
             res = self._offline_stream(r, sr, seg)
             if res["text"]:
                 texts.append(res["text"])
+                cuts.append({"start": round(start / sr, 2),
+                             "end": round(min(start + win, len(samples)) / sr, 2),
+                             "text": res["text"]})
             for k in ("lang", "emotion", "event"):
                 if k in res:
                     attrs[k] = res[k]
-        out = {"text": "".join(texts), "vad": False}
+        out = {"text": "".join(texts), "vad": False, "cuts": cuts}
         out.update(attrs)
         return out
 

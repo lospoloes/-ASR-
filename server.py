@@ -110,7 +110,7 @@ def _diar_asr_model():
 @app.post("/api/transcribe")
 async def api_transcribe(request: Request, ref: str = "", diarize: int = 0, num_speakers: int = -1,
                          threshold: float = 0.5, norm_num: int = 1, vad: int = 1,
-                         seg: str = ""):
+                         seg: str = "", decider: str = ""):
     data = await request.body()
     if not data:
         raise HTTPException(400, "空音频")
@@ -126,15 +126,20 @@ async def api_transcribe(request: Request, ref: str = "", diarize: int = 0, num_
     # seg: semantic（默认）| vad | window；旧参数 vad=0 等价于 window
     mode = seg if seg in ("semantic", "vad", "window") else ("semantic" if vad else "window")
     results, diar, vad_info = await run_in_threadpool(_run_all, samples, sr, ref, diarize, num_speakers,
-                                                     threshold, bool(norm_num), mode)
+                                                     threshold, bool(norm_num), mode, decider)
     return JSONResponse({"duration": round(duration, 3), "results": results, "diarization": diar,
                          "ref": ref, "vad": mode != "window", "seg_mode": mode, "vad_info": vad_info,
                          "time": time.strftime("%H:%M:%S")})
 
 
-def _semantic_decider():
-    """语义切段的决策模型：优先 SenseVoice（自带标点，切得最准），否则 Paraformer（只靠规则）。"""
-    for key in ("sensevoice", "paraformer-zh-small"):
+def _semantic_decider(prefer: str = ""):
+    """语义切段的决策模型。
+
+    prefer 指定时用它（在网页上切换决策模型，好对比两种模型的切段差异）；
+    留空则优先 SenseVoice（自带标点，切得最准），否则 Paraformer（只靠规则）。
+    """
+    order = (prefer,) if prefer in STATE["models"] else ("sensevoice", "paraformer-zh-small")
+    for key in order:
         if key in STATE["models"]:
             m = STATE["models"][key]
             return m, (lambda x, m=m: m._offline_stream(m.recognizer, asr_engine.SAMPLE_RATE, x)["text"])
@@ -142,7 +147,7 @@ def _semantic_decider():
 
 
 def _run_all(samples: np.ndarray, sr: int, ref: str, diarize: int, num_speakers: int, threshold: float,
-             norm_num: bool, mode: str = "semantic"):
+             norm_num: bool, mode: str = "semantic", decider: str = ""):
     """注意：切段只算一次，供所有模型共用；各模型耗时里不含 VAD 和语义决策。"""
     results = []
     vad_info = {"enabled": mode != "window", "mode": mode, "ms": 0.0, "n_segments": 0}
@@ -153,7 +158,7 @@ def _run_all(samples: np.ndarray, sr: int, ref: str, diarize: int, num_speakers:
             vad_info.update({"ms": vad_ms, "n_segments": len(segs)})
         elif mode == "semantic":
             frags, vad_ms = asr_engine.compute_vad(samples, sr, min_silence=0.1)
-            dm, fn = _semantic_decider()
+            dm, fn = _semantic_decider(decider)
             vad_info.update({"ms": vad_ms, "n_frags": len(frags)})
             if frags and fn:
                 utts, st = semantic_seg.segment(samples, frags, fn, sr)
@@ -174,6 +179,24 @@ def _run_all(samples: np.ndarray, sr: int, ref: str, diarize: int, num_speakers:
             except Exception as e:  # noqa: BLE001
                 r = {"key": key, "error": f"{type(e).__name__}: {e}"}
             results.append(r)
+
+        # VAD / 固定窗口这两个模式没有“文字判断”这一步，但也要把切点列出来，
+        # 才能和语义模式对比。文字直接取自模型自己刚算好的逐段结果（不多跑一遍识别）。
+        # 用哪个模型的文字：跟「决策」选择一致（VAD/窗口下它就是“逐段文字取自谁”）；
+        # 不再默认取第一个模型，否则选了 Paraformer 却看到 SenseVoice 的标点。
+        if mode != "semantic":
+            want = decider if decider in STATE["models"] else ("sensevoice" if "sensevoice" in STATE["models"] else "")
+            pick = next((r for r in results if r.get("key") == want and r.get("cuts")), None)
+            if pick is None:
+                pick = next((r for r in results if r.get("cuts")), None)
+            cuts = (pick or {}).get("cuts") or []
+            why = "gap" if mode == "vad" else "window"
+            vad_info["utterances"] = [
+                {"start": c["start"], "end": c["end"], "text": c.get("text", ""),
+                 "n_frags": 1, "reason": why, "wait": None}
+                for c in cuts]
+            vad_info["n_segments"] = len(cuts)
+            vad_info["text_from"] = (pick or {}).get("key")
 
         diar = None
         if diarize:

@@ -20,3 +20,6 @@ retry_loop.*
 download_retry*.log
 bench_vad.json
 benchmark/vad_results.json
+
+# 持续监听的转写缓存
+logs/

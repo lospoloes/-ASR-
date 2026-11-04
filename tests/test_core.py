@@ -93,6 +93,35 @@ class TestSemantic(unittest.TestCase):
         self.assertEqual(len(ss.fixed_gap_merge(frags, 0.25)), 4)
 
 
+class TestLive(unittest.TestCase):
+    def test_two_chunks_both_models(self):
+        import live_engine
+        downloaded = asr_engine.find_downloaded()
+        if not asr_engine.vad_model_path() or "paraformer-zh-small" not in downloaded:
+            self.skipTest("需要 silero-vad 和 paraformer-zh-small（python download_models.py）")
+        keys = [k for k in ("sensevoice", "paraformer-zh-small") if k in downloaded]
+        models = {k: asr_engine.AsrModel(registry.get_spec(k), downloaded[k]) for k in keys}
+        for m in models.values():
+            m.load()
+        d = Path(__file__).resolve().parents[1] / "benchmark" / "testset"
+        a, _ = asr_engine.read_wav((d / "s01_cmd.wav").read_bytes())
+        b, _ = asr_engine.read_wav((d / "s13_weather.wav").read_bytes())
+        x = np.concatenate([a, np.zeros(16000, np.float32), b])
+        events = []
+        sess = live_engine.LiveSession(models, events.append, min_silence=0.5)
+        for i in range(0, len(x), 1600):          # 模拟 0.1s 一块的流式输入
+            sess.accept(x[i:i + 1600])
+        sess.close()
+        chunks = [e for e in events if e["type"] == "chunk"]
+        self.assertEqual(len(chunks), 2, chunks)
+        for k in keys:
+            texts = [e for e in events if e["type"] == "text" and e["model"] == k]
+            self.assertEqual(len(texts), 2, k)
+            self.assertTrue(all(t["text"] for t in texts), k)
+            self.assertTrue(all(t["latency_ms"] >= t["decode_ms"] for t in texts))
+        self.assertIn("北京", "".join(e["text"] for e in events if e["type"] == "text"))
+
+
 class TestRegistry(unittest.TestCase):
     def test_specs(self):
         keys = [s["key"] for s in registry.all_specs()]

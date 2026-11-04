@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>持续监听转写</title>
+<style>
+:root{
+  --bg:#f5f6f8;--panel:#fff;--ink:#1d2129;--muted:#6b7280;--line:#e5e7eb;
+  --accent:#2563eb;--accent-soft:#e8efff;--ok:#16a34a;--ok-soft:#e9f8ee;--warn:#d97706;--warn-soft:#fff5e6;
+  --bad:#dc2626;--bad-soft:#fdecec;--rec:#e11d48;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#0f1115;--panel:#181b21;--ink:#e6e8eb;--muted:#9aa1ab;--line:#2a2f37;
+    --accent:#6b9bff;--accent-soft:#1d2a44;--ok:#4ade80;--ok-soft:#14301f;--warn:#fbbf24;--warn-soft:#33270f;
+    --bad:#f87171;--bad-soft:#3a1717;--rec:#fb7185;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+header{padding:18px 24px 6px}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px}
+a{color:var(--accent)}
+main{padding:12px 24px 40px;display:grid;gap:16px;max-width:1500px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+button{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 14px;cursor:pointer;font:inherit}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;padding:8px 20px}
+button.primary.on{background:var(--rec);border-color:var(--rec)}
+button:disabled{opacity:.45;cursor:default}
+select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:3px 6px;font:inherit}
+label.btn{border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+.meter{height:6px;width:180px;background:var(--line);border-radius:3px;overflow:hidden}
+.meter>i{display:block;height:100%;width:0;background:var(--ok);transition:width .08s}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.bad{background:var(--bad-soft);color:var(--bad)}
+#state{font-weight:600}
+.grid{display:grid;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.grid .h,.grid .c{padding:8px 10px;border-bottom:1px solid var(--line)}
+.grid .h{background:var(--bg);color:var(--muted);font-weight:600}
+#ghead{border-bottom:none;border-radius:8px 8px 0 0}
+#grid{border-top:none;border-radius:0 0 8px 8px}
+.grid .meta{color:var(--muted);font-size:12px;white-space:nowrap}
+.grid .t{font-size:15px;word-break:break-all}
+.grid .t.pending{color:var(--muted);font-style:italic;font-size:13px}
+.grid .kv{color:var(--muted);font-size:12px;margin-top:2px}
+.grid .new{animation:flash 1.2s ease-out}
+@keyframes flash{from{background:var(--accent-soft)}to{background:transparent}}
+#scroller{max-height:62vh;overflow:auto}
+#speaking{padding:8px 10px;color:var(--rec);display:none}
+table.stats{border-collapse:collapse;width:100%;font-size:13px}
+table.stats th,table.stats td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
+table.stats th{color:var(--muted)}
+.err{color:var(--bad)}
+@media (max-width:720px){main,header{padding-left:14px;padding-right:14px}.meter{width:100%}}
+</style>
+</head>
+<body>
+<header>
+  <h1>持续监听 · 双模型并行转写</h1>
+  <div class="sub">点「开始监听」后不用按键，直接聊天：VAD 自动把每句话切成 chunk，同一个 chunk 分别交给每个模型转写，结果持续出现在下方。
+    · <a href="/">← 单句对比页</a></div>
+</header>
+<main>
+<section class="panel">
+  <div class="row">
+    <button class="primary" id="go">开始监听</button>
+    <label class="btn">用音频文件模拟<input type="file" id="file" accept="audio/*,.wav" hidden></label>
+    <span class="meter"><i id="lvl"></i></span>
+    <span id="state" class="sub">未开始</span>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <label>切段静音阈值 <select id="sil"><option>0.3</option><option selected>0.5</option><option>0.8</option></select> 秒</label>
+    <label>最长 chunk <select id="maxc"><option>10</option><option selected>15</option><option>20</option></select> 秒</label>
+    <span id="models"></span>
+    <button id="exportTxt" disabled>导出转写</button>
+    <button id="exportJson" disabled>导出事件 JSON</button>
+    <button id="clear">清空</button>
+  </div>
+  <div class="sub" style="margin-top:8px">静音阈值：一句话后面静音多久算说完（越小出字越快，但更容易把一句话切碎）。延迟 = 从 VAD 判定说完到该模型出字（按<b>单独部署</b>计：等静音 + 本模型解码）。</div>
+  <div id="msg" class="err"></div>
+</section>
+
+<section class="panel">
+  <div class="grid" id="ghead"></div>
+  <div id="scroller"><div class="grid" id="grid"></div><div id="speaking">🎙 正在说话…</div></div>
+</section>
+
+<section class="panel">
+  <table class="stats" id="stats"></table>
+</section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let MODELS = [], ws = null, ctx = null, stream = null, src = null, proc = null, fileSrc = null;
+let running = false, events = [], chunks = {}, stats = {};
+
+// ------------------------------------------------------------ 模型列表
+fetch('/api/models').then(r => r.json()).then(d => {
+  const loaded = d.models.filter(m => m.status === 'loaded');
+  $('#models').innerHTML = loaded.map(m => `<label><input type="checkbox" class="mk" value="${m.key}" checked> ${esc(m.name)}</label>`).join(' ');
+  if (!loaded.length) $('#msg').textContent = '没有已加载的模型，请先运行 python download_models.py 再重启 server.py';
+});
+
+// ------------------------------------------------------------ 采集：麦克风或文件 → 16kHz Int16 → WebSocket
+function downsample(x, from){
+  if (from === 16000) return x;
+  const r = from / 16000, n = Math.floor(x.length / r), y = new Float32Array(n);
+  for (let i = 0; i < n; i++){ const p = i * r, j = Math.floor(p), f = p - j; y[i] = x[j] * (1 - f) + (x[j + 1] ?? x[j]) * f; }
+  return y;
+}
+function onAudio(e){
+  if (!running || !ws || ws.readyState !== 1) return;
+  const x = e.inputBuffer.getChannelData(0);
+  let m = 0; for (let i = 0; i < x.length; i += 8) m = Math.max(m, Math.abs(x[i]));
+  $('#lvl').style.width = Math.min(100, m * 140) + '%';
+  const y = downsample(x, ctx.sampleRate), b = new Int16Array(y.length);
+  for (let i = 0; i < y.length; i++){ const s = Math.max(-1, Math.min(1, y[i])); b[i] = s < 0 ? s * 0x8000 : s * 0x7fff; }
+  ws.send(b.buffer);
+}
+
+async function start(file){
+  $('#msg').textContent = '';
+  const models = [...document.querySelectorAll('.mk:checked')].map(i => i.value);
+  if (!models.length){ $('#msg').textContent = '至少勾选一个模型'; return; }
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  proc = ctx.createScriptProcessor(4096, 1, 1);
+  proc.onaudioprocess = onAudio;
+  const sink = ctx.createGain(); sink.gain.value = 0; proc.connect(sink); sink.connect(ctx.destination);
+  try{
+    if (file){
+      const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+      fileSrc = ctx.createBufferSource(); fileSrc.buffer = buf;
+      fileSrc.connect(proc); fileSrc.connect(ctx.destination);   // 推流的同时外放
+      fileSrc.onended = () => setTimeout(stop, 600);
+    } else {
+      stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1, echoCancellation:true, noiseSuppression:true, autoGainControl:true}});
+      src = ctx.createMediaStreamSource(stream); src.connect(proc);
+    }
+  }catch(e){ $('#msg').textContent = (file ? '无法解码音频文件：' : '无法打开麦克风（请用 http://127.0.0.1 访问并允许麦克风）：') + e.message; await ctx.close(); return; }
+
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/live');
+  ws.onopen = () => ws.send(JSON.stringify({models, min_silence: +$('#sil').value, max_chunk: +$('#maxc').value}));
+  ws.onmessage = m => handle(JSON.parse(m.data));
+  ws.onclose = () => { if (running) finish('连接已断开'); };
+  ws.onerror = () => { $('#msg').textContent = '无法连接后端 WebSocket（需要 pip install websockets 后重启 server.py）'; };
+  running = true;
+  $('#go').textContent = '停止'; $('#go').classList.add('on'); $('#file').disabled = true;
+  $('#state').textContent = file ? `模拟中：${file.name}` : '监听中…';
+  if (fileSrc) fileSrc.start();
+}
+function stop(){
+  if (!running) return;
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({type: 'stop'}));   // 服务端会冲出最后一句再回 stopped
+  else finish();
+  try { fileSrc && fileSrc.stop(); } catch(e) {}
+  stream && stream.getTracks().forEach(t => t.stop());
+  $('#state').textContent = '收尾中…';
+}
+function finish(note){
+  running = false;
+  try { proc && proc.disconnect(); ctx && ctx.close(); } catch(e) {}
+  stream = src = proc = fileSrc = null;
+  $('#go').textContent = '开始监听'; $('#go').classList.remove('on'); $('#file').disabled = false;
+  $('#lvl').style.width = '0'; $('#speaking').style.display = 'none';
+  $('#state').textContent = note || '已停止';
+  try { ws && ws.close(); } catch(e) {}
+}
+
+// ------------------------------------------------------------ 事件 → 页面
+function header(){
+  const cols = `150px repeat(${MODELS.length}, 1fr)`;
+  $('#grid').style.gridTemplateColumns = $('#ghead').style.gridTemplateColumns = cols;
+  $('#ghead').innerHTML = `<div class="h">chunk</div>` + MODELS.map(m => `<div class="h">${esc(m.name)}</div>`).join('');
+}
+function handle(e){
+  events.push(e);
+  if (e.type === 'ready'){
+    const same = MODELS.map(m => m.key).join() === e.models.map(m => m.key).join();
+    if (!same){ $('#grid').innerHTML = ''; stats = {}; }   // 换了模型组合：重建表格
+    MODELS = e.models; header(); MODELS.forEach(m => stats[m.key] ||= {n:0, lat:[], rtf:[], audio:0}); return;
+  }
+  if (e.type === 'speech_start' || e.type === 'speaking'){
+    $('#speaking').style.display = 'block'; $('#speaking').textContent = `🎙 正在说话 ${(e.dur || 0).toFixed(1)} 秒…`; return;
+  }
+  if (e.type === 'speech_end'){ $('#speaking').style.display = 'none'; return; }
+  if (e.type === 'chunk'){
+    const g = $('#grid'), reason = e.reason === 'max_len' ? '<span class="pill warn">超长切</span>' : '<span class="pill">静音切</span>';
+    const cells = [`<div class="c meta new">#${e.id} · ${e.start.toFixed(1)}–${e.end.toFixed(1)}s<br>${e.dur.toFixed(1)}s ${reason}</div>`]
+      .concat(MODELS.map(m => `<div class="c new" id="c${e.id}_${m.key}"><div class="t pending">转写中…</div></div>`));
+    g.insertAdjacentHTML('beforeend', cells.join(''));
+    chunks[e.id] = e; $('#speaking').style.display = 'none'; scroll(); return;
+  }
+  if (e.type === 'text'){
+    const cell = document.getElementById(`c${e.chunk_id}_${e.model}`);
+    if (cell){
+      const extra = ['emotion', 'event'].filter(k => e[k] && e[k] !== 'Speech' && e[k] !== 'NEUTRAL').map(k => esc(e[k])).join(' ');
+      cell.innerHTML = `<div class="t">${esc(e.text) || '<span class="sub">（空）</span>'}</div>
+        <div class="kv">延迟 <b>${Math.round(e.latency_ms)} ms</b> · 解码 ${Math.round(e.decode_ms)} ms · RTF ${e.rtf}${extra ? ' · ' + extra : ''}</div>`;
+    }
+    const s = stats[e.model]; s.n++; s.lat.push(e.latency_ms); s.rtf.push(e.rtf); s.audio += (e.end - e.start);
+    renderStats(); scroll();
+    $('#exportTxt').disabled = $('#exportJson').disabled = false; return;
+  }
+  if (e.type === 'error'){ $('#msg').textContent = (e.model ? e.model + '：' : '') + e.message; return; }
+  if (e.type === 'stopped'){ finish(); }
+}
+function scroll(){ const s = $('#scroller'); s.scrollTop = s.scrollHeight; }
+function renderStats(){
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+  const p90 = a => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * 0.9))]; };
+  $('#stats').innerHTML = '<tr><th>模型</th><th>已转写 chunk</th><th>累计语音</th><th>平均延迟</th><th>P90 延迟</th><th>最大延迟</th><th>平均 RTF</th></tr>' +
+    MODELS.map(m => { const s = stats[m.key]; return `<tr><td><b>${esc(m.name)}</b></td><td>${s.n}</td><td>${s.audio.toFixed(1)} s</td>
+      <td>${Math.round(avg(s.lat))} ms</td><td>${Math.round(p90(s.lat))} ms</td><td>${Math.round(Math.max(0, ...s.lat))} ms</td><td>${avg(s.rtf).toFixed(3)}</td></tr>`; }).join('');
+}
+
+// ------------------------------------------------------------ 导出 / 清空
+function download(name, text, type){ const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name; a.click(); }
+$('#exportTxt').onclick = () => {
+  const out = MODELS.map(m => `### ${m.name}\n` + events.filter(e => e.type === 'text' && e.model === m.key)
+    .map(e => `[${e.start.toFixed(1)}–${e.end.toFixed(1)}s] ${e.text}`).join('\n')).join('\n\n');
+  download('live_transcript.txt', '﻿' + out, 'text/plain');
+};
+$('#exportJson').onclick = () => download('live_events.json', JSON.stringify(events, null, 1), 'application/json');
+$('#clear').onclick = () => { if (running) return; events = []; chunks = {}; stats = {}; $('#grid').innerHTML = ''; $('#stats').innerHTML = ''; MODELS.forEach(m => stats[m.key] = {n:0, lat:[], rtf:[], audio:0}); };
+$('#go').onclick = () => running ? stop() : start(null);
+$('#file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f && !running) start(f); };
+</script>
+</body>
+</html>

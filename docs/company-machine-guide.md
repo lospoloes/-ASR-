@@ -61,6 +61,28 @@ py -3.12 -m venv .venv
 .venv\Scripts\python.exe benchmark_semantic.py
 ```
 
+## 3.5 持续监听 demo（双模型并行实时转写）
+
+这次更新新增了依赖 `websockets`，先装一下：
+
+```bat
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe server.py
+```
+
+浏览器打开 http://127.0.0.1:8000/live ：
+- 点「开始监听」，两个人正常聊天，每说完一句，表格里就多一行（左 SenseVoice、右 Paraformer），底部统计各自的延迟；
+- 没人陪聊时点「用音频文件模拟」，选 `benchmark\semantic\session1.wav` 等文件；
+- 可以对比切段静音阈值 0.3 / 0.5 / 0.8 秒的效果；
+- 「导出转写」「导出事件 JSON」可以保存结果。
+
+**请录一段两个人的真实聊天**（3–5 分钟，正常语速，可以有插话），把导出的 JSON 和转写放进 `benchmark/results/`，并在 `docs/live-demo.md` 第 3 节补一段"真人对话实测"（两个模型各自的明显错误、延迟统计）。录音本身不要提交。
+
+批量评测（结果写到 `benchmark/results/live.md`）：
+```bat
+.venv\Scripts\python.exe live_sim.py
+```
+
 ## 4. 名人声纹实验（马斯克、黄仁勋）
 
 ### 4.1 安装工具
@@ -140,4 +162,5 @@ git push origin main
 | yt-dlp 报 403 / 需要登录 | 加 `--cookies-from-browser edge`（或 chrome）；还不行就先 `.venv\Scripts\python.exe -m pip install -U yt-dlp` 升级 |
 | B 站链接下载失败 | 同上；也可以先手动下载视频，把清单里的链接换成本地文件路径 |
 | 识别结果全是"陌生人" | 检查 enroll 目录是否有对应人名的音频；或用 `--threshold 0.4` 调低阈值重跑 |
+| 持续监听页提示"无法连接后端 WebSocket" | 没装 `websockets`：`.venv\Scripts\python.exe -m pip install websockets` 后重启 server.py |
 | 中文路径报错 | 项目放在不含中文、空格的路径下（如 `C:\work\asr-demo`） |

@@ -15,12 +15,16 @@ from pathlib import Path
 
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+import asyncio
+import json
+
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 
 import asr_engine
 import registry
+import live_engine
 import semantic_seg
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -89,6 +93,76 @@ def model_info(spec: dict) -> dict:
 @app.get("/")
 def index():
     return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/live")
+def live_page():
+    return FileResponse(WEB_DIR / "live.html")
+
+
+@app.websocket("/ws/live")
+async def ws_live(ws: WebSocket):
+    """持续监听：首条消息为 JSON 配置，之后是 16kHz 单声道 Int16 小端二进制音频帧。
+
+    配置：{"models": ["sensevoice", "paraformer-zh-small"], "min_silence": 0.5, "max_chunk": 15}
+    推送：live_engine.LiveSession 的事件（JSON）。
+    """
+    await ws.accept()
+    loop = asyncio.get_running_loop()
+    out: asyncio.Queue = asyncio.Queue()
+    sess = None
+    try:
+        cfg = json.loads(await ws.receive_text())
+        keys = [k for k in cfg.get("models") or list(STATE["models"]) if k in STATE["models"]]
+        if not keys:
+            await ws.send_json({"type": "error", "message": "没有可用模型，请先 python download_models.py"})
+            return
+        sess = live_engine.LiveSession(
+            {k: STATE["models"][k] for k in keys},
+            on_event=lambda ev: loop.call_soon_threadsafe(out.put_nowait, ev),
+            min_silence=float(cfg.get("min_silence", 0.5)), max_chunk=float(cfg.get("max_chunk", 15)),
+            lock=LOCK, log_dir=Path(__file__).resolve().parent / "logs" / "live")
+        await ws.send_json({"type": "ready", "models": [{"key": k, "name": STATE["models"][k].spec["name"]}
+                                                        for k in keys],
+                            "min_silence": sess.min_silence, "max_chunk": sess.max_chunk})
+
+        done = asyncio.Event()
+
+        async def pump():  # 唯一的发送方：避免多个协程同时往同一个 WebSocket 写
+            while True:
+                ev = await out.get()
+                await ws.send_json(ev)
+                if ev.get("type") == "stopped":
+                    done.set()
+                    return
+
+        sender = asyncio.create_task(pump())
+        try:
+            while True:
+                msg = await ws.receive()
+                if msg.get("type") == "websocket.disconnect":
+                    break
+                if msg.get("bytes"):
+                    pcm = np.frombuffer(msg["bytes"], dtype="<i2").astype(np.float32) / 32768.0
+                    await run_in_threadpool(sess.accept, pcm)
+                elif msg.get("text") and json.loads(msg["text"]).get("type") == "stop":
+                    s, sess = sess, None
+                    await run_in_threadpool(s.close)  # 冲出最后一句并等转写完成
+                    loop.call_soon_threadsafe(out.put_nowait, {"type": "stopped"})
+                    await asyncio.wait_for(done.wait(), 10)
+                    break
+        finally:
+            sender.cancel()
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:  # noqa: BLE001
+        try:
+            await ws.send_json({"type": "error", "message": f"{type(e).__name__}: {e}"})
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        if sess is not None:
+            await run_in_threadpool(sess.close, 5.0)
 
 
 @app.get("/api/models")

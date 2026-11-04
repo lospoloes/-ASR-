@@ -48,6 +48,16 @@ python server.py
 
 > 必须用 `127.0.0.1` 或 `localhost` 访问。用局域网 IP 访问时，浏览器会禁止页面使用麦克风；这种情况下仍然可以用"上传 WAV"功能。
 
+## 持续监听（双模型并行实时转写）
+
+打开 **http://127.0.0.1:8000/live**，点「开始监听」后不用按键，直接聊天：VAD 自动把每句话切成 chunk，同一个 chunk 分别交给 SenseVoice 和 Paraformer 转写，文字左右两栏持续出现，并统计各自的延迟。没人陪聊时可以用「用音频文件模拟」。
+
+```bash
+python live_sim.py      # 持续聊天场景下分别评测两个模型（CER / 真实延迟 / 不同静音阈值），输出 benchmark/results/live.md
+```
+
+方案、评测结果和结论见 [docs/live-demo.md](docs/live-demo.md)。
+
 ## 下载模型
 
 ```bash
@@ -149,6 +159,8 @@ python -m unittest discover -s tests          # 单元测试（不需要模型�
 | `benchmark_vad.py` | 长音频 VAD 切段 vs 整段的对比测评 |
 | `semantic_seg.py` / `benchmark_semantic.py` | 语义切段 / 语义切段评测 |
 | `make_semantic_testset.py` | 生成语义切段测试集（句内思考停顿 + 长短不一的句间停顿，句子边界已知） |
+| `live_engine.py` | 持续监听核心：流式 VAD 切 chunk → 每个模型分别转写 → 事件回调（与网页无关，可搬到端侧） |
+| `web/live.html` / `live_sim.py` | 持续监听页面（`/live`）/ 持续聊天场景下的双模型评测 |
 | `speaker_id.py` | 声纹注册 + 说话人识别实验 |
 | `tools/fetch_speaker_clips.py` / `benchmark/speakers/clips.tsv` | 按清单下载、截取说话人音频 |
 | `tools/make_ref_draft.py` | 多模型字级对齐，生成带【】的标准文本初稿（供人工听音校对） |

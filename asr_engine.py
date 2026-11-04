@@ -95,28 +95,39 @@ def arabic_to_zh(text: str) -> str:
 _vads: dict = {}
 
 
-def _get_vad(min_silence: float = 0.25):
-    """加载 silero VAD（懒加载，按 min_silence 缓存；找不到模型文件返回 False）。"""
-    if min_silence in _vads:
-        return _vads[min_silence]
+def vad_model_path() -> str | None:
+    """silero_vad.onnx 的路径；没下载返回 None。"""
     import os
-    import sherpa_onnx as so
     # download_models.py 把模型放在 models/silero-vad/；兼容手动放在 models/silero_vad.onnx 的旧布局
     p = VAD_PATH
     if not p:
         files = registry.resolve_files(registry.get_spec("silero-vad"))
         legacy = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "silero_vad.onnx")
         p = str(files["model"]) if files else legacy
-    if not os.path.exists(p):
-        _vads[min_silence] = False
-        return False
+    return p if os.path.exists(p) else None
+
+
+def new_vad(min_silence: float = 0.25, max_speech: float = 20.0, buffer_sec: float = 60.0):
+    """新建一个独立的 VAD 实例（流式场景每个会话一个，避免状态互相污染）；没有模型返回 None。"""
+    import sherpa_onnx as so
+
+    p = vad_model_path()
+    if not p:
+        return None
     cfg = so.VadModelConfig()
     cfg.silero_vad.model = p
     cfg.silero_vad.threshold = 0.5
     cfg.silero_vad.min_silence_duration = min_silence
     cfg.silero_vad.min_speech_duration = 0.25
+    cfg.silero_vad.max_speech_duration = max_speech
     cfg.sample_rate = SAMPLE_RATE
-    _vads[min_silence] = so.VoiceActivityDetector(cfg, buffer_size_in_seconds=60)
+    return so.VoiceActivityDetector(cfg, buffer_size_in_seconds=buffer_sec)
+
+
+def _get_vad(min_silence: float = 0.25):
+    """整段音频切分用的共享 VAD（懒加载，按 min_silence 缓存；找不到模型文件返回 False）。"""
+    if min_silence not in _vads:
+        _vads[min_silence] = new_vad(min_silence) or False
     return _vads[min_silence]
 
 def vad_segments(samples: np.ndarray, sr: int = SAMPLE_RATE, min_silence: float = 0.25) -> list[tuple[float, float]]:

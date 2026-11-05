@@ -27,10 +27,12 @@ import registry
 import live_engine
 import semantic_seg
 
-WEB_DIR = Path(__file__).resolve().parent / "web"
+ROOT_DIR = Path(__file__).resolve().parent
+WEB_DIR = ROOT_DIR / "web"
 
 app = FastAPI(title="端侧 ASR 对比 Demo")
-STATE: dict = {"models": {}, "load_errors": {}, "diarizer": None, "diar_error": None, "threads": 2}
+STATE: dict = {"models": {}, "load_errors": {}, "diarizer": None, "diar_error": None, "threads": 2,
+               "save_audio": True}
 LOCK = threading.Lock()  # 串行推理，保证各模型耗时互不干扰
 
 
@@ -104,7 +106,10 @@ def live_page():
 async def ws_live(ws: WebSocket):
     """持续监听：首条消息为 JSON 配置，之后是 16kHz 单声道 Int16 小端二进制音频帧。
 
-    配置：{"models": ["sensevoice", "paraformer-zh-small"], "min_silence": 0.5, "max_chunk": 15}
+    配置：{"models": ["sensevoice", "paraformer-zh-small"], "min_silence": 0.5, "max_chunk": 15,
+          "partial_interval": 1, "save_audio": true}
+    partial_interval：说话中每隔几秒出一次临时结果，0 或不给 = 不出；
+    save_audio：false = 这次不存录音（回放已有文件时用；服务端开了 --no-save-audio 时一律不存）。
     推送：live_engine.LiveSession 的事件（JSON）。
     """
     await ws.accept()
@@ -121,10 +126,14 @@ async def ws_live(ws: WebSocket):
             {k: STATE["models"][k] for k in keys},
             on_event=lambda ev: loop.call_soon_threadsafe(out.put_nowait, ev),
             min_silence=float(cfg.get("min_silence", 0.5)), max_chunk=float(cfg.get("max_chunk", 15)),
-            lock=LOCK, log_dir=Path(__file__).resolve().parent / "logs" / "live")
+            partial_interval=min(max(float(cfg.get("partial_interval") or 0), 0.0), 10.0),
+            lock=LOCK, log_dir=ROOT_DIR / "logs" / "live",
+            save_audio=STATE["save_audio"] and cfg.get("save_audio", True) is not False)
         await ws.send_json({"type": "ready", "models": [{"key": k, "name": STATE["models"][k].spec["name"]}
                                                         for k in keys],
-                            "min_silence": sess.min_silence, "max_chunk": sess.max_chunk})
+                            "min_silence": sess.min_silence, "max_chunk": sess.max_chunk,
+                            "partial_interval": sess.partial_interval,
+                            "audio_file": sess.audio_path.relative_to(ROOT_DIR).as_posix() if sess.audio_path else None})
 
         done = asyncio.Event()
 
@@ -298,7 +307,10 @@ def main():
     ap.add_argument("--threads", type=int, default=2, help="每个模型的推理线程数（端侧建议 1~4）")
     ap.add_argument("--models", default="", help="逗号分隔的模型 key，默认加载全部已下载模型")
     ap.add_argument("--no-browser", action="store_true", help="启动后不自动打开浏览器")
+    ap.add_argument("--no-save-audio", action="store_true",
+                    help="持续监听时不把录音存到 logs/live/（默认存一份，只在本机，不提交）")
     args = ap.parse_args()
+    STATE["save_audio"] = not args.no_save_audio
 
     selected = [s.strip() for s in args.models.split(",") if s.strip()] or None
     load_models(selected, args.threads)

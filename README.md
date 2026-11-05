@@ -50,10 +50,14 @@ python server.py
 
 ## 持续监听（双模型并行实时转写）
 
-打开 **http://127.0.0.1:8000/live**，点「开始监听」后不用按键，直接聊天：VAD 自动把每句话切成 chunk，同一个 chunk 分别交给 SenseVoice 和 Paraformer 转写，文字左右两栏持续出现，并统计各自的延迟。没人陪聊时可以用「用音频文件模拟」。
+打开 **http://127.0.0.1:8000/live**，点「开始监听」后不用按键，直接聊天：VAD 自动把每句话切成 chunk，同一个 chunk 分别交给 SenseVoice 和 Paraformer 转写，文字左右两栏持续出现，并统计各自的延迟。一句话还没说完时，默认每 1 秒先出一次灰色的临时结果（「临时出字」可选关 / 1 秒 / 2 秒），说完后换成正式结果。没人陪聊时可以用「用音频文件模拟」。每次监听的转写事件和录音会存到 `logs/live/`（只在本机，不提交；`--no-save-audio` 不存录音）。
 
 ```bash
-python live_sim.py      # 持续聊天场景下分别评测两个模型（CER / 真实延迟 / 不同静音阈值），输出 benchmark/results/live.md
+python live_sim.py          # 持续聊天场景下分别评测两个模型（CER / 真实延迟 / 不同静音阈值），输出 benchmark/results/live.md
+python tools/fetch_ramc.py  # 下载一段真人双人自由聊天（MagicData-RAMC，约 60MB，截 3 分钟，带人工转写；不提交）
+python live_sim.py --real   # 在这段真人对话上评测，输出 benchmark/results/live_real.md
+python tools/replay_live.py test_audio/ramc/CTS-CN-F2F-2019-11-15-1434_13-190.wav   # 按真实速度回放给 /ws/live（要先起 server.py），
+                            # 对比不开 / 每 1 秒 / 每 2 秒临时出字，输出 benchmark/results/live_partial.md
 ```
 
 方案、评测结果和结论见 [docs/live-demo.md](docs/live-demo.md)。
@@ -143,6 +147,7 @@ python speaker_id.py
 python server.py --threads 1                  # 模拟端侧的单核性能
 python server.py --models sensevoice,paraformer-zh-small,zipformer-bilingual-small
 python server.py --port 8080 --no-browser
+python server.py --no-save-audio              # 持续监听不保存录音（默认存到 logs/live/，不提交）
 python -m unittest discover -s tests          # 单元测试（不需要模型）
 ```
 
@@ -163,6 +168,8 @@ python -m unittest discover -s tests          # 单元测试（不需要模型�
 | `web/live.html` / `live_sim.py` | 持续监听页面（`/live`）/ 持续聊天场景下的双模型评测 |
 | `speaker_id.py` | 声纹注册 + 说话人识别实验 |
 | `tools/fetch_speaker_clips.py` / `benchmark/speakers/clips.tsv` | 按清单下载、截取说话人音频 |
+| `tools/fetch_ramc.py` | 下载一段真人双人对话（MagicData-RAMC）并截取，生成带时间戳和说话人的标准文本（`live_sim.py --real` 用） |
+| `tools/replay_live.py` | 按真实速度把 WAV 推给 `/ws/live`，对比开 / 不开临时出字：屏幕落后多少、最长多久没有新字、正式结果慢了多少、多花多少算力 |
 | `tools/make_ref_draft.py` | 多模型字级对齐，生成带【】的标准文本初稿（供人工听音校对） |
 | `benchmark/long/` | 长音频标准文本初稿与定稿（`refs.tsv`） |
 | `benchmark/` | 测试句、TTS 生成的测试音频、评测结果 |

@@ -43,6 +43,7 @@ label.btn{border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor
 .grid .meta{color:var(--muted);font-size:12px;white-space:nowrap}
 .grid .t{font-size:15px;word-break:break-all}
 .grid .t.pending{color:var(--muted);font-style:italic;font-size:13px}
+.grid .t.partial{color:var(--muted)}
 .grid .kv{color:var(--muted);font-size:12px;margin-top:2px}
 .grid .new{animation:flash 1.2s ease-out}
 @keyframes flash{from{background:var(--accent-soft)}to{background:transparent}}
@@ -68,16 +69,19 @@ table.stats th{color:var(--muted)}
     <label class="btn">用音频文件模拟<input type="file" id="file" accept="audio/*,.wav" hidden></label>
     <span class="meter"><i id="lvl"></i></span>
     <span id="state" class="sub">未开始</span>
+    <span id="rec" class="sub"></span>
   </div>
   <div class="row" style="margin-top:12px">
     <label>切段静音阈值 <select id="sil"><option>0.3</option><option selected>0.5</option><option>0.8</option></select> 秒</label>
     <label>最长 chunk <select id="maxc"><option>10</option><option selected>15</option><option>20</option></select> 秒</label>
+    <label>临时出字 <select id="pint"><option value="0">关</option><option value="1" selected>每 1 秒</option><option value="2">每 2 秒</option></select></label>
     <span id="models"></span>
     <button id="exportTxt" disabled>导出转写</button>
     <button id="exportJson" disabled>导出事件 JSON</button>
     <button id="clear">清空</button>
   </div>
-  <div class="sub" style="margin-top:8px">静音阈值：一句话后面静音多久算说完（越小出字越快，但更容易把一句话切碎）。延迟 = 从 VAD 判定说完到该模型出字（按<b>单独部署</b>计：等静音 + 本模型解码）。</div>
+  <div class="sub" style="margin-top:8px">静音阈值：一句话后面静音多久算说完（越小出字越快，但更容易把一句话切碎）。延迟 = 从 VAD 判定说完到该模型出字（按<b>单独部署</b>计：等静音 + 本模型解码）。
+    临时出字：还没说完时每隔 1–2 秒把这句已说的部分重新识别一遍，<span style="color:var(--muted)">灰字</span>显示，说完后换成正式结果（每次都从头算，句子越长越费算力）。</div>
   <div id="msg" class="err"></div>
 </section>
 
@@ -94,7 +98,8 @@ table.stats th{color:var(--muted)}
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let MODELS = [], ws = null, ctx = null, stream = null, src = null, proc = null, fileSrc = null;
-let running = false, events = [], chunks = {}, stats = {};
+let running = false, events = [], chunks = {}, stats = {}, SID = 0;   // SID：第几次监听（chunk 编号每次从 1 开始，元素 id 要带上它）
+const newStats = () => ({n:0, lat:[], rtf:[], audio:0, dec:0, pn:0, pms:0});
 
 // ------------------------------------------------------------ 模型列表
 fetch('/api/models').then(r => r.json()).then(d => {
@@ -141,7 +146,8 @@ async function start(file){
   }catch(e){ $('#msg').textContent = (file ? '无法解码音频文件：' : '无法打开麦克风（请用 http://127.0.0.1 访问并允许麦克风）：') + e.message; await ctx.close(); return; }
 
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/live');
-  ws.onopen = () => ws.send(JSON.stringify({models, min_silence: +$('#sil').value, max_chunk: +$('#maxc').value}));
+  ws.onopen = () => ws.send(JSON.stringify({models, min_silence: +$('#sil').value, max_chunk: +$('#maxc').value,
+                                            partial_interval: +$('#pint').value}));
   ws.onmessage = m => handle(JSON.parse(m.data));
   ws.onclose = () => { if (running) finish('连接已断开'); };
   ws.onerror = () => { $('#msg').textContent = '无法连接后端 WebSocket（需要 pip install websockets 后重启 server.py）'; };
@@ -164,6 +170,7 @@ function finish(note){
   stream = src = proc = fileSrc = null;
   $('#go').textContent = '开始监听'; $('#go').classList.remove('on'); $('#file').disabled = false;
   $('#lvl').style.width = '0'; $('#speaking').style.display = 'none';
+  document.querySelectorAll('.meta.prov .pill').forEach(p => { p.className = 'pill bad'; p.textContent = '没说完就断开了'; });
   $('#state').textContent = note || '已停止';
   try { ws && ws.close(); } catch(e) {}
 }
@@ -179,40 +186,63 @@ function handle(e){
   if (e.type === 'ready'){
     const same = MODELS.map(m => m.key).join() === e.models.map(m => m.key).join();
     if (!same){ $('#grid').innerHTML = ''; stats = {}; }   // 换了模型组合：重建表格
-    MODELS = e.models; header(); MODELS.forEach(m => stats[m.key] ||= {n:0, lat:[], rtf:[], audio:0}); return;
+    MODELS = e.models; header(); MODELS.forEach(m => stats[m.key] ||= newStats()); SID++;
+    $('#rec').textContent = e.audio_file ? `· 录音存在本机 ${e.audio_file}（不提交）` : '';
+    return;
   }
   if (e.type === 'speech_start' || e.type === 'speaking'){
     $('#speaking').style.display = 'block'; $('#speaking').textContent = `🎙 正在说话 ${(e.dur || 0).toFixed(1)} 秒…`; return;
   }
   if (e.type === 'speech_end'){ $('#speaking').style.display = 'none'; return; }
+  if (e.type === 'partial'){   // 临时结果：这句还没切出来，先建一行占位；正式结果到了会替换
+    row(e.chunk_id);
+    const cell = document.getElementById(`c${SID}_${e.chunk_id}_${e.model}`);
+    if (cell && !cell.dataset.final)
+      cell.innerHTML = `<div class="t partial">${esc(e.text) || '…'}</div>
+        <div class="kv">临时结果 · 识别到 ${e.end.toFixed(1)}s · 解码 ${Math.round(e.decode_ms)} ms</div>`;
+    const s = stats[e.model]; if (s){ s.pn++; s.pms += e.decode_ms; renderStats(); }
+    scroll(); return;
+  }
   if (e.type === 'chunk'){
-    const g = $('#grid'), reason = e.reason === 'max_len' ? '<span class="pill warn">超长切</span>' : '<span class="pill">静音切</span>';
-    const cells = [`<div class="c meta new">#${e.id} · ${e.start.toFixed(1)}–${e.end.toFixed(1)}s<br>${e.dur.toFixed(1)}s ${reason}</div>`]
-      .concat(MODELS.map(m => `<div class="c new" id="c${e.id}_${m.key}"><div class="t pending">转写中…</div></div>`));
-    g.insertAdjacentHTML('beforeend', cells.join(''));
+    const reason = e.reason === 'max_len' ? '<span class="pill warn">超长切</span>' : '<span class="pill">静音切</span>';
+    const meta = row(e.id);
+    meta.classList.remove('prov');
+    meta.innerHTML = `#${e.id} · ${e.start.toFixed(1)}–${e.end.toFixed(1)}s<br>${e.dur.toFixed(1)}s ${reason}`;
     chunks[e.id] = e; $('#speaking').style.display = 'none'; scroll(); return;
   }
   if (e.type === 'text'){
-    const cell = document.getElementById(`c${e.chunk_id}_${e.model}`);
+    const cell = document.getElementById(`c${SID}_${e.chunk_id}_${e.model}`);
     if (cell){
+      cell.dataset.final = '1';
       const extra = ['emotion', 'event'].filter(k => e[k] && e[k] !== 'Speech' && e[k] !== 'NEUTRAL').map(k => esc(e[k])).join(' ');
       cell.innerHTML = `<div class="t">${esc(e.text) || '<span class="sub">（空）</span>'}</div>
         <div class="kv">延迟 <b>${Math.round(e.latency_ms)} ms</b> · 解码 ${Math.round(e.decode_ms)} ms · RTF ${e.rtf}${extra ? ' · ' + extra : ''}</div>`;
     }
-    const s = stats[e.model]; s.n++; s.lat.push(e.latency_ms); s.rtf.push(e.rtf); s.audio += (e.end - e.start);
+    const s = stats[e.model]; s.n++; s.lat.push(e.latency_ms); s.rtf.push(e.rtf); s.audio += (e.end - e.start); s.dec += e.decode_ms;
     renderStats(); scroll();
     $('#exportTxt').disabled = $('#exportJson').disabled = false; return;
   }
   if (e.type === 'error'){ $('#msg').textContent = (e.model ? e.model + '：' : '') + e.message; return; }
   if (e.type === 'stopped'){ finish(); }
 }
+// 一个 chunk 一行：第一次见到这个编号（临时结果或切段）时建行，返回最左边的说明格
+function row(id){
+  let meta = document.getElementById(`m${SID}_${id}`);
+  if (!meta){
+    $('#grid').insertAdjacentHTML('beforeend', [`<div class="c meta new prov" id="m${SID}_${id}">#${id} · <span class="pill warn">说话中…</span></div>`]
+      .concat(MODELS.map(m => `<div class="c new" id="c${SID}_${id}_${m.key}"><div class="t pending">转写中…</div></div>`)).join(''));
+    meta = document.getElementById(`m${SID}_${id}`);
+  }
+  return meta;
+}
 function scroll(){ const s = $('#scroller'); s.scrollTop = s.scrollHeight; }
 function renderStats(){
   const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
   const p90 = a => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * 0.9))]; };
-  $('#stats').innerHTML = '<tr><th>模型</th><th>已转写 chunk</th><th>累计语音</th><th>平均延迟</th><th>P90 延迟</th><th>最大延迟</th><th>平均 RTF</th></tr>' +
+  $('#stats').innerHTML = '<tr><th>模型</th><th>已转写 chunk</th><th>累计语音</th><th>平均延迟</th><th>P90 延迟</th><th>最大延迟</th><th>平均 RTF</th><th>临时结果（次数 · 额外解码）</th></tr>' +
     MODELS.map(m => { const s = stats[m.key]; return `<tr><td><b>${esc(m.name)}</b></td><td>${s.n}</td><td>${s.audio.toFixed(1)} s</td>
-      <td>${Math.round(avg(s.lat))} ms</td><td>${Math.round(p90(s.lat))} ms</td><td>${Math.round(Math.max(0, ...s.lat))} ms</td><td>${avg(s.rtf).toFixed(3)}</td></tr>`; }).join('');
+      <td>${Math.round(avg(s.lat))} ms</td><td>${Math.round(p90(s.lat))} ms</td><td>${Math.round(Math.max(0, ...s.lat))} ms</td><td>${avg(s.rtf).toFixed(3)}</td>
+      <td>${s.pn ? `${s.pn} 次 · ${(s.pms / 1000).toFixed(1)} s` + (s.dec ? `（正式结果的 ${(s.pms / s.dec).toFixed(1)} 倍）` : '') : '—'}</td></tr>`; }).join('');
 }
 
 // ------------------------------------------------------------ 导出 / 清空
@@ -223,7 +253,7 @@ $('#exportTxt').onclick = () => {
   download('live_transcript.txt', '﻿' + out, 'text/plain');
 };
 $('#exportJson').onclick = () => download('live_events.json', JSON.stringify(events, null, 1), 'application/json');
-$('#clear').onclick = () => { if (running) return; events = []; chunks = {}; stats = {}; $('#grid').innerHTML = ''; $('#stats').innerHTML = ''; MODELS.forEach(m => stats[m.key] = {n:0, lat:[], rtf:[], audio:0}); };
+$('#clear').onclick = () => { if (running) return; events = []; chunks = {}; stats = {}; $('#grid').innerHTML = ''; $('#stats').innerHTML = ''; MODELS.forEach(m => stats[m.key] = newStats()); };
 $('#go').onclick = () => running ? stop() : start(null);
 $('#file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f && !running) start(f); };
 </script>

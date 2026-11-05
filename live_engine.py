@@ -1,30 +1,41 @@
-"""持续监听：流式 VAD 切 chunk → 同一个 chunk 分别交给每个 ASR 模型转写 → 事件回调。
+"""持续监听：流式 VAD 切句 → 同一句分别交给每个 ASR 模型转写 → 事件回调。
 
 和网页无关，可以直接搬到端侧常驻链路里用：
-    sess = LiveSession(models, on_event=print)
+    sess = LiveSession(models, on_event=print, partial_interval=0.4)
     while True:
         sess.accept(pcm_float32_16k)     # 麦克风来一块喂一块，任意长度
     sess.close()                         # 结束时把最后一句冲出来
 
-事件（dict，type 字段区分）:
-    speech_start  {t}                         检测到有人开始说话（t：音频时间，秒）
-    speaking      {t, dur}                    正在说话，每 0.5s 一次（dur：这句已说了多久）
-    speech_end    {t}                         VAD 判定这句说完了
+实时出字分三层（partial_interval > 0 时）：
+    蹦字      说话过程中每隔 partial_interval 秒，把【当前这一段】从段起点重新识别一遍（partial，kind=live）
+    段锁定    VAD 在句内停顿（≥ piece_gap 秒）或段长到 piece_max 秒时切开一段，整段识别一次，之后不再变（kind=lock）
+    正式结果  VAD 判定这句说完（静音 ≥ min_silence）或句长到 max_chunk，整句重新识别一次，替换这句的全部临时文字（text）
+离线模型没法接着上次往下算，每次都得从头识别；只重识别当前这一段（不是整句），每次识别的音频就不超过 piece_max 秒。
+
+事件（dict，type 字段区分；时间都是会话音频时间，单位秒）:
+    speech_start  {t, start, prob}        有人开始说话。t：VAD 确认的时刻；start：往回推的开口时刻；prob：这一帧的人声概率
+    speaking      {t, dur, prob}          正在说话，每 0.5s 一次（dur：这句已说了多久；prob：最近 0.5s 的平均人声概率）
+    speech_end    {t}                     VAD 判定说完了（静音够长，或会话结束）
+    cut           {t, chunk_id, piece, at, reason}
+                  句内切段：第 piece 段到 at 为止，下一段从 at 开始。reason：pause（停顿）/ max_len（段太长被切）。
+                  chunk_id 是这句切出来以后会用的编号
     chunk         {id, start, end, dur, reason, endpoint_wait_ms}
-                  切出一个 chunk。reason：silence（静音达到阈值）/ max_len（超长被切）
+                  切出一句。reason：silence（静音够长）/ max_len（超长被切，人还在说）/ flush（会话结束时还没说完）
                   endpoint_wait_ms：语音结束到 VAD 判停之间等的静音（音频时间）
-    partial       {chunk_id, model, text, start, end, decode_ms, lag_ms}
-                  临时结果（partial_interval > 0 才有）：这句还没说完，把已经说了的部分（start → end）重新识别一遍。
-                  chunk_id 是这句切出来以后会用的编号，同一句的 partial 一定排在它的 text 前面，text 到了就替换掉。
+    partial       {chunk_id, model, kind, rev, piece, piece_start, start, end, text, locked, live, audio, decode_ms, lag_ms}
+                  临时结果（partial_interval > 0 才有）。text = locked + live：locked 是这句已锁定各段的文字，
+                  live 是当前这段的最新识别（kind=lock 时为空）；start → end 是这句已经识别到的范围；
+                  audio：这次实际送去识别的音频有几秒。
+                  同一句同一模型 rev 递增，新的整体替换旧的；同一句的 partial 一定排在它的 text 前面，text 到了全部替换掉。
                   lag_ms：从这段音频到手到出临时结果用了多久
     text          {chunk_id, model, text, decode_ms, rtf, latency_ms, shown_ms, ...}
-                  某个模型转写完一个 chunk（正式结果）。
+                  某个模型转写完一句（正式结果）。
                   latency_ms = endpoint_wait_ms + decode_ms：该模型【单独部署】时，从说完到出字的延迟
-                  shown_ms：本次实际出字用时（两个模型排队跑，后跑的会多等前一个的解码；开了临时结果时，
+                  shown_ms：本次实际出字用时（两个模型排队跑，后跑的会多等前一个的解码；开了实时出字时，
                   还可能要等手上那次临时识别做完）
     error         {message}
 
-两个模型拿到的是完全相同的 chunk，各自独立转写，便于公平对比。
+两个模型拿到的是完全相同的音频，各自独立转写，便于公平对比。
 """
 from __future__ import annotations
 
@@ -37,25 +48,42 @@ from pathlib import Path
 
 import numpy as np
 
-import asr_engine
+import vad_stream
 
-SR = asr_engine.SAMPLE_RATE
-WIN = 512  # silero VAD 要求按 512 采样（32ms）精确喂入
+SR = vad_stream.SR
+WIN = vad_stream.WIN  # silero VAD 按 512 采样（32ms）一帧
 ROOT = Path(__file__).resolve().parent
+
+
+def join_text(parts) -> str:
+    """把几段文字接起来：前后都是英文字母 / 数字时补一个空格，中文直接接。"""
+    out = ""
+    for p in parts:
+        if not p:
+            continue
+        if out and out[-1].isascii() and out[-1].isalnum() and p[0].isascii() and p[0].isalnum():
+            out += " "
+        out += p
+    return out
 
 
 class LiveSession:
     def __init__(self, models: dict, on_event, min_silence: float = 0.5, max_chunk: float = 15.0,
                  pad: float = 0.2, lock: threading.Lock | None = None, log_dir: Path | None = None,
-                 save_audio: bool = False, partial_interval: float = 0.0):
+                 save_audio: bool = False, partial_interval: float = 0.0, piece_gap: float = 0.2,
+                 piece_max: float = 8.0, min_speech: float = 0.15, neg_threshold: float = 0.5):
         """models: {key: AsrModel}，按顺序依次转写；lock：与其他推理共用的锁（保证计时不被抢 CPU）。
 
-        log_dir：chunk / partial / text 事件追加到 <log_dir>/<时间>.jsonl。
+        min_silence：静音多久算一句说完；max_chunk：一句最长多少秒，到了就硬切（切在最近 2 秒里人声概率最低的地方）。
+        log_dir：cut / chunk / partial / text 事件追加到 <log_dir>/<时间>.jsonl。
         save_audio：同时把收到的原始音频存为同名 .wav（16kHz 单声道 Int16，第 0 秒 = 会话开始，
-        与事件里的 start / end 对齐，可以拿来换参数重跑）。需要同时给 log_dir。
-        partial_interval：说话过程中每隔多少秒（音频时间）出一次临时结果；0 = 不出。
-        每次都把这句从头重新识别（离线模型没法接着上次往下算），一句话越长每次越慢，总计算量随句长平方增长。
-        正式结果优先：转写线程有正式结果要做时，临时结果直接作废；排队的临时结果只留最新的一份。
+        与事件里的时间对齐，可以拿来换参数重跑）。需要同时给 log_dir。
+        partial_interval：说话过程中每隔多少秒（音频时间）把当前这一段重新识别一次；0 = 不出临时结果。
+        piece_gap / piece_max：句内停顿多久切段 / 一段最长多少秒。只决定临时结果怎么分段，不影响正式结果。
+        min_speech / neg_threshold：人声概率 > 0.5 持续多久算开口 / 开口后概率降到多少以下开始计静音。
+        默认 0.15s / 0.5 是 tools/eval_vad.py 在 94 分钟真人对话上定的（sherpa 默认 0.25s / 0.35：
+        开口晚约 0.1 秒、短句漏得多；有底噪的房间里判停晚、相邻两句容易连成一句）。
+        转写线程的优先级：正式结果 > 段锁定 > 蹦字；蹦字只留最新的一份，过期就作废。
         """
         self.models = models
         self.on_event = on_event
@@ -63,29 +91,38 @@ class LiveSession:
         self.max_chunk = max_chunk
         self.pad = pad
         self.partial_interval = max(0.0, float(partial_interval))
+        self.piece_gap = piece_gap
+        self.piece_max = piece_max
         self.lock = lock or threading.Lock()
-        self.vad = asr_engine.new_vad(min_silence=min_silence, max_speech=max_chunk,
-                                      buffer_sec=max(60.0, max_chunk * 3))
-        if self.vad is None:
-            raise RuntimeError("没有 VAD 模型：python download_models.py")
-        # 环形缓冲：保留最近 keep_sec 秒音频，buf_start 是 buf[0] 的绝对采样位置
+        self.min_speech = min_speech
+        self.neg_threshold = neg_threshold
+        self.vad = vad_stream.SileroStream(min_silence=min_silence, sentence_max=max_chunk,
+                                           piece_gap=piece_gap, piece_max=piece_max,
+                                           min_speech=min_speech, neg_threshold=neg_threshold)
+        # 环形缓冲：保留最近 keep 个采样，buf_start 是 buf[0] 的绝对采样位置
         self.keep = int(SR * max(60.0, max_chunk * 3))
         self.buf = np.zeros(0, np.float32)
         self.buf_start = 0
-        self.received = 0          # 已收到的总采样数（= 音频时钟）
-        self._rest = np.zeros(0, np.float32)
-        self._peak = 0.0           # VAD 自动增益：最近几秒的峰值（半衰期约 5s）
-        self.gain = 1.0
-        self._speaking = False
+        self.received = 0          # VAD 已处理的采样数（= 音频时钟）
+        self._probs: deque = deque(maxlen=SR // 2 // WIN)   # 最近 0.5s 每帧的人声概率
         self._speech_from = 0
         self._last_tick = 0
         self._last_partial = 0
+        # 正在说的这句（还没切出来）：只在调用 accept 的线程里改
+        self._sent_start = 0       # 这句的起点
+        self._sent_lo = 0          # 这句送去识别从哪里开始（开口处往前补 pad）
+        self._piece = 0            # 当前是第几段
+        self._piece_start = 0
+        self._piece_lo = 0         # 当前这段送去识别从哪里开始
         self.n_chunks = 0
-        # 转写线程的待办：正式结果按顺序全部做；临时结果只有一个槽位，新的覆盖旧的，没有正式结果要做时才做
+        # 转写线程的待办：正式结果、段锁定按顺序全部做；蹦字只有一个槽位，新的覆盖旧的，前两样都没有时才做
         self._cv = threading.Condition()
         self._finals: deque = deque()
+        self._locks: deque = deque()
         self._partial = None
         self._closing = False
+        # (chunk_id, 模型) → 这句在这个模型上的临时文字 {"locked": {段: 文字}, "live": {段: 文字}, "rev": n}；只有转写线程用
+        self._drafts: dict = {}
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
         self._emit_lock = threading.Lock()
@@ -112,33 +149,28 @@ class LiveSession:
         """喂入 16kHz 单声道 float32 音频，长度任意。"""
         pcm = np.asarray(pcm, dtype=np.float32)
         if self._wav is not None and len(pcm):
-            # 存送给 ASR 的原始音频（不含下面 VAD 的自动增益）；服务端收的是 Int16 / 32768，这里能无损还原
+            # 存送给 ASR 的原始音频（不含 VAD 的自动增益）；服务端收的是 Int16 / 32768，这里能无损还原
             self._wav.writeframes(np.clip(np.round(pcm * 32768.0), -32768, 32767).astype("<i2").tobytes())
         self.buf = np.concatenate([self.buf, pcm])
         if len(self.buf) > self.keep:
             cut = len(self.buf) - self.keep
             self.buf = self.buf[cut:]
             self.buf_start += cut
-        # 自动增益只作用于 VAD 输入：轻声/远场时 silero 的人声概率贴近阈值，会把整句判丢
-        # （实测 -40dBFS 的一句话在 Int16 输入下被丢掉，放大 1.3 倍即恢复；纯噪声放大 10 倍也不误触发）
-        if len(pcm):
-            self._peak = max(float(np.abs(pcm).max()), self._peak * 0.5 ** (len(pcm) / SR / 5.0))
-            self.gain = float(np.clip(0.7 / max(self._peak, 0.07), 1.0, 10.0))
-        x = np.concatenate([self._rest, np.clip(pcm * self.gain, -1.0, 1.0)])
-        n = len(x) // WIN * WIN
-        for i in range(0, n, WIN):
-            self.vad.accept_waveform(x[i:i + WIN])
-            self.received += WIN
-            self._poll()
-        self._rest = x[n:]
+        for fr in self.vad.accept(pcm):    # 自动增益在 VAD 里，只作用于 VAD 的输入
+            self.received = fr.end
+            self._probs.append(fr.prob)
+            for e in fr.events:
+                self._on_vad(e)
+            self._tick()
 
     def close(self, timeout: float = 60.0) -> None:
         """结束：把正在说的最后一句冲出来，等所有转写完成。"""
-        self.vad.flush()
-        self._poll(final=True)
+        for e in self.vad.flush():
+            self._on_vad(e)
         with self._cv:
             self._closing = True
             self._partial = None   # 最后一句的正式结果马上就出，临时结果不用再做
+            self._locks.clear()
             self._cv.notify()
         self._worker.join(timeout)
         if self._log:
@@ -147,106 +179,150 @@ class LiveSession:
             self._wav.close()
             self._wav = None
 
-    # ------------------------------------------------------------ VAD 状态 → chunk
-    def _poll(self, final: bool = False) -> None:
-        speaking = self.vad.is_speech_detected()
-        t = self.received / SR
-        if speaking and not self._speaking:
-            self._speech_from = self.received
-            self._last_tick = self._last_partial = self.received
-            self._emit({"type": "speech_start", "t": round(t, 2)})
-        elif speaking and self.received - self._last_tick >= SR // 2:
+    # ------------------------------------------------------------ VAD 事件 → 句 / 段
+    def _on_vad(self, e: vad_stream.Event) -> None:
+        t = round(self.received / SR, 2)
+        if e.kind == "start":
+            if e.reason == "speech":
+                self._speech_from = self._last_tick = self.received
+                self._emit({"type": "speech_start", "t": t, "start": round(e.at / SR, 2),
+                            "prob": round(self._probs[-1], 3)})
+                lo = e.at - int(self.pad * SR)
+            else:
+                lo = e.at   # 上一句超长被切开、人还在说：切点两边都不补 pad，免得切点附近的字被两句各识别一次
+            self._sent_start = e.at
+            self._sent_lo = lo
+            self._new_piece(1, e.at, lo)
+        elif e.kind == "cut":
+            cid = self.n_chunks + 1
+            self._emit({"type": "cut", "t": t, "chunk_id": cid, "piece": e.piece, "at": round(e.at / SR, 2),
+                        "reason": e.reason})
+            if self.partial_interval > 0:
+                job = (cid, e.piece, self._sent_start, self._piece_start, e.hi, self._slice(self._piece_lo, e.hi),
+                       time.perf_counter(), tuple(self.models))
+                with self._cv:
+                    self._locks.append(job)
+                    self._partial = None   # 槽位里那份蹦字识别的就是刚切下来这段，锁定结果马上就来，作废
+                    self._cv.notify()
+            self._new_piece(e.piece + 1, e.at, e.at)
+        else:   # end
+            if e.reason != "max_len":
+                self._emit({"type": "speech_end", "t": t})
+            self._emit_chunk(e)
+
+    def _new_piece(self, n: int, start: int, lo: int) -> None:
+        self._piece, self._piece_start, self._piece_lo = n, start, lo
+        self._last_partial = start   # 从段起点开始计时：第一段在 VAD 确认开口时已经过去约 0.3 秒
+
+    def _slice(self, lo: int, hi: int) -> np.ndarray:
+        lo = max(lo, self.buf_start)
+        hi = min(hi, self.buf_start + len(self.buf))
+        return self.buf[lo - self.buf_start:max(lo, hi) - self.buf_start].copy()
+
+    def _emit_chunk(self, e: vad_stream.Event) -> None:
+        start, end = e.start, e.at
+        hi = end if e.reason == "max_len" else end + int(self.pad * SR)   # 超长硬切的切点后面是下一句，不补 pad
+        audio = self._slice(self._sent_lo, hi)
+        if len(audio) < SR // 5:
+            return
+        self.n_chunks += 1
+        ch = {"type": "chunk", "id": self.n_chunks, "start": round(start / SR, 2), "end": round(end / SR, 2),
+              "dur": round((end - start) / SR, 2), "reason": e.reason,
+              # 语音结束到 VAD 判停之间等了多久（音频时钟；会话结束时为 0）
+              "endpoint_wait_ms": 0.0 if e.reason == "flush" else round(max(0, self.received - end) / SR * 1000, 1)}
+        self._emit(ch)
+        with self._cv:
+            self._finals.append((ch, audio, time.perf_counter()))
+            self._partial = None   # 槽位里还没开始的蹦字就是刚切出的这句，作废
+            self._cv.notify()
+
+    def _tick(self) -> None:
+        seg = self.vad.seg
+        if not seg.in_speech:
+            return
+        if self.received - self._last_tick >= SR // 2:
             self._last_tick = self.received
-            self._emit({"type": "speaking", "t": round(t, 2),
-                        "dur": round((self.received - self._speech_from) / SR, 1)})
-        if self._speaking and not speaking:
-            self._emit({"type": "speech_end", "t": round(t, 2)})
-        self._speaking = speaking
-
-        while not self.vad.empty():
-            seg = self.vad.front
-            start, n = int(seg.start), len(seg.samples)
-            self.vad.pop()
-            end = start + n
-            lo = max(start - int(self.pad * SR), self.buf_start)
-            hi = min(end + int(self.pad * SR), self.buf_start + len(self.buf))
-            audio = self.buf[lo - self.buf_start:hi - self.buf_start].copy()
-            if len(audio) < SR // 5:
-                continue
-            dur = n / SR
-            self.n_chunks += 1
-            ch = {"type": "chunk", "id": self.n_chunks, "start": round(start / SR, 2), "end": round(end / SR, 2),
-                  "dur": round(dur, 2), "reason": "max_len" if dur >= self.max_chunk - 0.05 else "silence",
-                  # 语音结束到 VAD 判停之间等了多久（音频时钟；flush 时为 0）
-                  "endpoint_wait_ms": 0.0 if final else round(max(0, self.received - end) / SR * 1000, 1)}
-            self._emit(ch)
-            with self._cv:
-                self._finals.append((ch, audio, time.perf_counter()))
-                self._partial = None   # 槽位里还没开始的临时结果就是刚切出的这句，作废
-                self._cv.notify()
-            self._last_partial = self.received  # 超长被切、人还在说时，下一句的临时结果从现在重新计时
-
-        if (not final and speaking and self.partial_interval > 0
+            self._emit({"type": "speaking", "t": round(self.received / SR, 2),
+                        "dur": round((self.received - self._speech_from) / SR, 1),
+                        "prob": round(float(np.mean(self._probs)), 3)})
+        if (self.partial_interval > 0 and seg.voiced_from != -1
+                and self.received - seg.voiced_from >= SR // 5              # 这段已经有 0.2 秒人声
                 and self.received - self._last_partial >= self.partial_interval * SR):
-            self._last_partial = self.received
             self._queue_partial()
 
-    def _segment_start(self) -> int:
-        """VAD 正在攒的这一段从哪个采样开始（和切出来的 chunk 的 start 一致）。"""
-        cs = getattr(self.vad, "current_segment", None)
-        if cs is not None and cs.start >= 0:
-            return int(cs.start)
-        # 老版本 sherpa-onnx 没有 current_segment：VAD 确认有人说话时，把段起点定在
-        # 当前位置 − 2 个窗口 − min_speech_duration（asr_engine.new_vad 里是 0.25s）
-        return self._speech_from - 2 * WIN - SR // 4
-
     def _queue_partial(self) -> None:
-        """把正在说的这句（VAD 当前段的起点 → 已收到的最新音频）放进临时结果槽位。"""
-        start = self._segment_start()
-        lo = max(start - int(self.pad * SR), self.buf_start)   # 和正式结果一样前面补 pad
+        """把当前这一段（段起点 → 已收到的最新音频）放进蹦字槽位。"""
+        lo = max(self._piece_lo, self.buf_start)
         hi = self.buf_start + len(self.buf)
         if hi - lo < SR // 2:
             return
-        audio = self.buf[lo - self.buf_start:].copy()
+        self._last_partial = self.received
+        job = (self.n_chunks + 1, self._piece, self._sent_start, self._piece_start, hi,
+               self.buf[lo - self.buf_start:].copy(), time.perf_counter(), tuple(self.models))
         with self._cv:
-            self._partial = (self.n_chunks + 1, audio, start, hi, time.perf_counter())
+            self._partial = job
             self._cv.notify()
 
     # ------------------------------------------------------------ 转写线程
     def _run(self) -> None:
         while True:
             with self._cv:
-                while not (self._finals or self._partial is not None or self._closing):
+                while not (self._finals or self._locks or self._partial is not None or self._closing):
                     self._cv.wait()
                 if self._finals:
-                    job, is_final = self._finals.popleft(), True
+                    kind, job = "final", self._finals.popleft()
+                elif self._locks:
+                    kind, job = "lock", self._locks.popleft()
                 elif self._partial is not None:
-                    job, is_final, self._partial = self._partial, False, None
+                    kind, job, self._partial = "live", self._partial, None
                 else:
                     return   # 已 close，正式结果都做完了
-            if is_final:
+            if kind == "final":
                 self._transcribe(*job)
             else:
-                self._transcribe_partial(*job)
+                self._transcribe_piece(kind, *job)
 
-    def _transcribe_partial(self, cid: int, audio: np.ndarray, start: int, end: int, t_job: float) -> None:
-        for key, m in self.models.items():
-            # 这句已经切出来了，或者有正式结果在排队：让正式结果先做，这次临时结果作废
-            if cid <= self.n_chunks or self._finals:
+    def _transcribe_piece(self, kind: str, cid: int, piece: int, sent_start: int, piece_start: int, hi: int,
+                          audio: np.ndarray, t_job: float, keys: tuple) -> None:
+        for i, key in enumerate(keys):
+            if cid <= self.n_chunks:
+                return   # 这句已经切出来了：正式结果会整句替换，临时的不用做了
+            if self._finals or (kind == "live" and (self._locks or piece < self._piece)):
+                # 有更要紧的活：蹦字直接作废（下一份很快就来）；段锁定把还没做的模型放回队头，先去做正式结果
+                if kind == "lock":
+                    with self._cv:
+                        self._locks.appendleft((cid, piece, sent_start, piece_start, hi, audio, t_job, keys[i:]))
                 return
+            m = self.models[key]
             try:
                 with self.lock:
                     t0 = time.perf_counter()
                     res = m._offline_stream(m.recognizer, SR, audio)
                     dec = (time.perf_counter() - t0) * 1000
+                text = res["text"]
             except Exception:  # noqa: BLE001 —— 临时结果出错不报：正式结果还会再转写一遍
-                continue
-            self._emit({"type": "partial", "chunk_id": cid, "model": key, "text": res["text"],
-                        "start": round(start / SR, 2), "end": round(end / SR, 2), "decode_ms": round(dec, 1),
+                if kind == "live":
+                    continue
+                text, dec = None, 0.0
+            d = self._drafts.setdefault((cid, key), {"locked": {}, "live": {}, "rev": 0})
+            if kind == "lock":
+                # 锁定识别出错时，用这段最后一次蹦字顶上
+                d["locked"][piece] = text if text is not None else d["live"].get(piece, "")
+                live, upto = "", piece
+            else:
+                d["live"][piece] = live = text
+                upto = piece - 1
+            locked = join_text(d["locked"].get(p, d["live"].get(p, "")) for p in range(1, upto + 1))
+            d["rev"] += 1
+            self._emit({"type": "partial", "chunk_id": cid, "model": key, "kind": kind, "rev": d["rev"],
+                        "piece": piece, "piece_start": round(piece_start / SR, 2), "start": round(sent_start / SR, 2),
+                        "end": round(hi / SR, 2), "text": join_text([locked, live]), "locked": locked, "live": live,
+                        "audio": round(len(audio) / SR, 2), "decode_ms": round(dec, 1),
                         "lag_ms": round((time.perf_counter() - t_job) * 1000, 1)})
 
     def _transcribe(self, ch: dict, audio: np.ndarray, t_chunk: float) -> None:
         for key, m in self.models.items():
+            self._drafts.pop((ch["id"], key), None)
             try:
                 with self.lock:
                     t0 = time.perf_counter()
@@ -265,9 +341,9 @@ class LiveSession:
             self._emit(ev)
 
     def _emit(self, ev: dict) -> None:
-        # chunk 事件来自调用 accept 的线程，partial / text 事件来自转写线程，串行化
+        # speech / cut / chunk 事件来自调用 accept 的线程，partial / text 事件来自转写线程，串行化
         with self._emit_lock:
-            if self._log and ev["type"] in ("chunk", "partial", "text"):
+            if self._log and ev["type"] in ("cut", "chunk", "partial", "text"):
                 self._log.write(json.dumps(ev, ensure_ascii=False) + "\n")
                 self._log.flush()
             try:

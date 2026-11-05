@@ -119,7 +119,8 @@ def main():
                  "带起止时间和说话人。`python tools/fetch_ramc.py` 下载并截取；许可证 CC BY-NC-ND 4.0，音频和文本只在本机，不提交",
                  *common,
                  "- **真实延迟** = 人工标注的句子结束时刻 → 该模型出字（= VAD 判停等待 + 本模型解码，按单独部署计）；"
-                 "只统计 VAD 正好在这句话结尾切开的句子（括号里是句数），和下一句挨得太近、被并进同一个 chunk 的不计",
+                 "只统计 VAD 正好在这句话结尾判停（静音够长）切开的句子（括号里是句数）：和下一句挨得太近、被并进同一个 chunk 的不计；"
+                 "到最长 chunk 被硬切的也不计（那时人还在说，硬切的判定时刻比切点晚最多 2 秒，不是\"说完到出字\"）",
                  "- **一段含两人**：一个 chunk 里同时有两个说话人的话（交给大模型时分不清是谁说的）"]
     else:
         lines = ["# 持续监听场景：SenseVoice vs Paraformer", "", *common,
@@ -130,7 +131,7 @@ def main():
 
     for silence in args.silence:
         lines += [f"## 静音阈值 {silence}s", "",
-                  "| 数据 | chunk 数 | 平均/最长 chunk | 一句被切成多段 | 一段含多句 | " + ("一段含两人 | " if args.real else "")
+                  "| 数据 | chunk 数（其中硬切） | 平均/最长 chunk | 一句被切成多段 | 一段含多句 | " + ("一段含两人 | " if args.real else "")
                   + " | ".join(f"{names[k]} CER | {names[k]} 真实延迟（平均/P90）" for k in models) + " |",
                   "|---|---|---|---|---|" + ("---|" if args.real else "") + "---|---|" * len(models)]
         tot = {k: [0, 0, []] for k in models}
@@ -160,7 +161,8 @@ def main():
                 if ds["ends"]:
                     for g_end in ds["ends"]:
                         # 收尾这句话的 chunk：段尾在真实句尾附近
-                        cand = [c for c in chunks if -0.3 <= c["end"] - g_end <= 1.0 and c["id"] in texts]
+                        cand = [c for c in chunks if -0.3 <= c["end"] - g_end <= 1.0 and c["id"] in texts
+                                and c["reason"] != "max_len"]
                         if cand:
                             c = min(cand, key=lambda c: abs(c["end"] - g_end))
                             judged = c["end"] + c["endpoint_wait_ms"] / 1000   # VAD 判定说完的音频时刻
@@ -169,7 +171,8 @@ def main():
                 lat_s = (f"{np.mean(lat):.0f} / {np.percentile(lat, 90):.0f} ms" + (f"（{len(lat)} 句）" if args.real else "")
                          if lat else "—")
                 cells.append(f"{err / max(len(rn), 1) * 100:.2f}% | {lat_s}")
-            lines.append(f"| {ds['name']} | {len(chunks)} | {np.mean(durs):.1f}s / {max(durs):.1f}s | {split} | {merged} | "
+            n_cap = sum(c["reason"] == "max_len" for c in chunks)
+            lines.append(f"| {ds['name']} | {len(chunks)}（{n_cap}） | {np.mean(durs):.1f}s / {max(durs):.1f}s | {split} | {merged} | "
                          + (f"{mixed} | " if args.real else "") + " | ".join(cells) + " |")
             print(f"[{silence}s] {ds['name']}: {len(chunks)} chunks", flush=True)
         lines += ["", "合计：" + "；".join(

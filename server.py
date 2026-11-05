@@ -107,8 +107,10 @@ async def ws_live(ws: WebSocket):
     """持续监听：首条消息为 JSON 配置，之后是 16kHz 单声道 Int16 小端二进制音频帧。
 
     配置：{"models": ["sensevoice", "paraformer-zh-small"], "min_silence": 0.5, "max_chunk": 15,
-          "partial_interval": 1, "save_audio": true}
-    partial_interval：说话中每隔几秒出一次临时结果，0 或不给 = 不出；
+          "partial_interval": 0.4, "piece_gap": 0.2, "piece_max": 8, "save_audio": true}
+    partial_interval：说话中每隔几秒把当前这一段重新识别一次（实时出字），0 或不给 = 不出；
+    piece_gap / piece_max：句内停顿多久切段 / 一段最长几秒（实时出字按段识别，不影响正式结果）；
+    min_speech / neg_threshold：VAD 开口要多久 / 开口后概率低于多少计静音（可选，默认见 LiveSession，页面不暴露）；
     save_audio：false = 这次不存录音（回放已有文件时用；服务端开了 --no-save-audio 时一律不存）。
     推送：live_engine.LiveSession 的事件（JSON）。
     """
@@ -127,12 +129,18 @@ async def ws_live(ws: WebSocket):
             on_event=lambda ev: loop.call_soon_threadsafe(out.put_nowait, ev),
             min_silence=float(cfg.get("min_silence", 0.5)), max_chunk=float(cfg.get("max_chunk", 15)),
             partial_interval=min(max(float(cfg.get("partial_interval") or 0), 0.0), 10.0),
+            piece_gap=min(max(float(cfg.get("piece_gap", 0.2)), 0.0), 2.0),
+            piece_max=min(max(float(cfg.get("piece_max", 8.0)), 1.0), 30.0),
+            min_speech=min(max(float(cfg.get("min_speech", 0.15)), 0.05), 1.0),
+            neg_threshold=min(max(float(cfg.get("neg_threshold", 0.5)), 0.1), 0.5),
             lock=LOCK, log_dir=ROOT_DIR / "logs" / "live",
             save_audio=STATE["save_audio"] and cfg.get("save_audio", True) is not False)
         await ws.send_json({"type": "ready", "models": [{"key": k, "name": STATE["models"][k].spec["name"]}
                                                         for k in keys],
                             "min_silence": sess.min_silence, "max_chunk": sess.max_chunk,
-                            "partial_interval": sess.partial_interval,
+                            "partial_interval": sess.partial_interval, "piece_gap": sess.piece_gap,
+                            "piece_max": sess.piece_max, "min_speech": sess.min_speech,
+                            "neg_threshold": sess.neg_threshold,
                             "audio_file": sess.audio_path.relative_to(ROOT_DIR).as_posix() if sess.audio_path else None})
 
         done = asyncio.Event()

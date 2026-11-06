@@ -15,7 +15,12 @@ from pathlib import Path
 import numpy as np
 
 MIN_SEC = 3.0          # 不足 3 秒不判（段太短，声纹不可靠）
-DEFAULT_THRESHOLD = 0.41   # ERes2Net 的 EER 点（benchmark/results/speaker_id.md），最终以 owner_eval.md 曲线定
+# 双阈值（owner_eval.md 曲线，开发集定的，验证集未调参）：
+#   对话档 0.45：FAR 1.4% / FRR 0%——主人少被拒，日常显示用
+#   特权档 0.55：FAR 0.3% / FRR 12.1%——敏感操作用，宁可拒
+DIALOG_THRESHOLD = 0.45
+PRIVILEGED_THRESHOLD = 0.55
+DEFAULT_THRESHOLD = DIALOG_THRESHOLD
 DEFAULT_PROFILE = Path(__file__).resolve().parent / "data" / "owner_profile.json"
 
 
@@ -50,8 +55,12 @@ def score(profile: OwnerProfile, emb: "np.ndarray") -> float:
     return float(np.mean([float(np.dot(e, v)) for v in profile.vectors]))
 
 
-def decide(profile: OwnerProfile | None, emb, duration_sec: float, threshold: float = DEFAULT_THRESHOLD) -> str:
-    """三态判定：unknown（<3 秒或无注册）/ owner / stranger。"""
+def decide(profile: OwnerProfile | None, emb, duration_sec: float,
+           threshold: float = DIALOG_THRESHOLD) -> str:
+    """三态判定：unknown（<3 秒或无注册）/ owner / stranger。
+
+    threshold 传档位值：日常显示用 DIALOG_THRESHOLD（0.45），敏感操作用 PRIVILEGED_THRESHOLD（0.55）。
+    """
     if profile is None or not profile.vectors or duration_sec < MIN_SEC:
         return "unknown"
     return "owner" if score(profile, emb) >= threshold else "stranger"

@@ -76,7 +76,7 @@ class LiveSession:
                  save_audio: bool = False, partial_interval: float = 0.0, piece_gap: float = 0.2,
                  piece_max: float = 8.0, min_speech: float = 0.15, neg_threshold: float = 0.5,
                  owner_profile: "speaker_owner.OwnerProfile | None" = None,
-                 owner_model=None, owner_threshold: float = speaker_owner.DEFAULT_THRESHOLD):
+                 owner_model=None, owner_threshold: float = speaker_owner.DIALOG_THRESHOLD):
         """models: {key: AsrModel}，按顺序依次转写；lock：与其他推理共用的锁（保证计时不被抢 CPU）。
 
         min_silence：静音多久算一句说完；max_chunk：一句最长多少秒，到了就硬切（切在最近 2 秒里人声概率最低的地方）。

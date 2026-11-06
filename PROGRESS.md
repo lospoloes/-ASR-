@@ -39,3 +39,8 @@
 
 - 提交：721943c 之前 Task 0–2；072aa8d + 947ee25 Task 3；06f30c1 Task 1 补充；721943c Task 4；4004cdb Task 5。
 - 测试：32 通过 skip 0。声纹数据（注册音频、data/owner_profile.json）未提交。
+
+## 反馈修正 1：双阈值（2026-11-06）
+
+- `speaker_owner` 双阈值常量：对话档 `DIALOG_THRESHOLD=0.45`（曲线 FAR 1.4%/FRR 0%，主人少被拒）、特权档 `PRIVILEGED_THRESHOLD=0.55`（FAR 0.3%/FRR 12.1%，敏感操作宁拒），均由 owner_eval.md 开发集曲线定，验证集未调参。`decide(threshold=...)` 按档位传值。
+- 验证集（deniro 注册，未调参）：对话档 召回 3/3、FAR 0/21；特权档 召回 1/3、FAR 0/21（特权档以召回换严格，符合设计）。

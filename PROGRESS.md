@@ -17,3 +17,8 @@
 - 反向验证：注册向量打乱后对自己 score −0.02 → stranger ✅。
 - 页面：正式结果旁 主人/陌生人/未知 徽标（pill 样式复用）；docs/live-demo.md 补字段规则。
 - 测试：32 通过 skip 0（test_owner.py 11 个，其中 TestLiveOwner 4 个喂真语音 s07_long 拼接 + mock embed）。
+
+## Task 1 补充：真实主人验证集（2026-11-06）
+
+- 主人 = deniro（1 句全长注册，`data/owner_profile.json` 不提交）；陌生人 = daniel/emma/freeman/halle/jensen/jlaw/leijun/musk/tom/weaver 共 10 人 21 句（未用于调参，阈值 0.41 沿用 Task 0 EER 曲线）。
+- 结果：**FAR 0/21 = 0.0%**（验收 ≤1%）✅；**≥3s 主人召回 3/3 = 100%**（验收 ≥90%）✅。陌生人最高分 daniel 0.363 < 0.41，余量 0.047。

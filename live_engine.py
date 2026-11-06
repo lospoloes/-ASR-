@@ -76,7 +76,8 @@ class LiveSession:
                  save_audio: bool = False, partial_interval: float = 0.0, piece_gap: float = 0.2,
                  piece_max: float = 8.0, min_speech: float = 0.15, neg_threshold: float = 0.5,
                  owner_profile: "speaker_owner.OwnerProfile | None" = None,
-                 owner_model=None, owner_threshold: float = speaker_owner.DIALOG_THRESHOLD):
+                 owner_model=None, owner_threshold: float = speaker_owner.DIALOG_THRESHOLD,
+                 owner_diarizer=None):
         """models: {key: AsrModel}，按顺序依次转写；lock：与其他推理共用的锁（保证计时不被抢 CPU）。
 
         min_silence：静音多久算一句说完；max_chunk：一句最长多少秒，到了就硬切（切在最近 2 秒里人声概率最低的地方）。
@@ -105,8 +106,13 @@ class LiveSession:
         self.owner_profile = owner_profile
         self.owner_model = owner_model
         self.owner_threshold = owner_threshold
+        # 句内分角色段累积：Diarizer 段攒秒数，攒够 MIN_SEC 判一次后清零
+        self.owner_acc: list = []
         if owner_profile is not None and owner_model is None:
             raise ValueError("owner_profile 需要同时给 owner_model（speaker_owner.load_model 的返回值）")
+        if owner_profile is not None and owner_diarizer is None:
+            raise ValueError("owner_profile 需要同时给 owner_diarizer（asr_engine.Diarizer 实例，句内分角色段用）")
+        self.owner_diarizer = owner_diarizer
         self.vad = vad_stream.SileroStream(min_silence=min_silence, sentence_max=max_chunk,
                                            piece_gap=piece_gap, piece_max=piece_max,
                                            min_speech=min_speech, neg_threshold=neg_threshold)
@@ -345,14 +351,31 @@ class LiveSession:
                       "latency_ms": round(ch["endpoint_wait_ms"] + dec, 1),
                       "shown_ms": round(ch["endpoint_wait_ms"] + (time.perf_counter() - t_chunk) * 1000, 1)}
                 # 声纹主人识别：只加 owner 字段，转写内容不动。判定失败保持 null，不影响转写事件。
-                # 音频截前 2.5 秒送声纹：句越长 embed 越慢（2.5s 时 P90≈47ms，10s 句 P90≈206ms），截断后 3 秒句数足判
+                # 句内分角色段累积：Diarizer 把整句切说话人段，挑与主人声纹最像的段（主段）；
+                # 主段向量按秒数加权攒进 owner_acc（跨句累积），攒够 MIN_SEC 才判。判过的秒数清零重新攒。
                 if self.owner_profile is not None:
                     ev["owner"] = None
                     try:
-                        emb = speaker_owner.embed(audio[:int(2.5 * SR)], self.owner_model)
-                        verdict = speaker_owner.decide(self.owner_profile, emb,
-                                                       len(audio) / SR, self.owner_threshold)
-                        ev["owner"] = None if verdict == "unknown" else verdict == "owner"
+                        with self.lock:
+                            segs, _ = self.owner_diarizer.run(audio, num_speakers=-1)
+                        cands = []
+                        for s in segs:
+                            dur = s["end"] - s["start"]
+                            if dur < 0.5:
+                                continue   # 段太短不可靠
+                            seg_audio = audio[int(s["start"] * SR):int(s["end"] * SR)]
+                            cands.append((speaker_owner.embed(seg_audio, self.owner_model), dur))
+                        if cands:
+                            emb, sec = max(cands, key=lambda c: speaker_owner.score(self.owner_profile, c[0]))
+                            self.owner_acc.append((emb, sec))
+                            acc = sum(s for _, s in self.owner_acc)
+                            if acc >= speaker_owner.MIN_SEC:
+                                mean = np.mean([e * s for e, s in self.owner_acc], axis=0)
+                                mean /= np.linalg.norm(mean) + 1e-9
+                                verdict = speaker_owner.decide(self.owner_profile, mean,
+                                                               acc, self.owner_threshold)
+                                ev["owner"] = None if verdict == "unknown" else verdict == "owner"
+                                self.owner_acc.clear()
                     except Exception:  # noqa: BLE001
                         pass
                 for k in ("lang", "emotion", "event"):

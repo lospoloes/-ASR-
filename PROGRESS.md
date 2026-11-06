@@ -44,3 +44,11 @@
 
 - `speaker_owner` 双阈值常量：对话档 `DIALOG_THRESHOLD=0.45`（曲线 FAR 1.4%/FRR 0%，主人少被拒）、特权档 `PRIVILEGED_THRESHOLD=0.55`（FAR 0.3%/FRR 12.1%，敏感操作宁拒），均由 owner_eval.md 开发集曲线定，验证集未调参。`decide(threshold=...)` 按档位传值。
 - 验证集（deniro 注册，未调参）：对话档 召回 3/3、FAR 0/21；特权档 召回 1/3、FAR 0/21（特权档以召回换严格，符合设计）。
+
+## 反馈修正 2：句内分角色段累积（2026-11-06）
+
+- `LiveSession` 新参数 `owner_diarizer`（asr_engine.Diarizer 实例）：正式结果先跑句内 Diarizer 切说话人段，每段（≥0.5s）提向量，取与主人声纹最像的主段；主段向量按秒数加权攒进 `owner_acc`（跨句累积），攒够 `MIN_SEC=3` 秒判一次后清零。
+- server：注册文件 + Diarizer 模型都就绪才启用（缺分角色模型打印提示不启用）。
+- 端到端（真 ERes2Net + 真 Diarizer）：deniro 测试句 9fb04fdc → [None, True]（两句累积后判 owner）、ad074fb3 → [True]；s07_long（TTS 声）→ False ✅。
+- 耗时：Diariizer 整句 ~1000ms 在转写线程后台跑，不占 ASR 解码（text 事件 decode_ms 不变）；判定在 Diarizer 完成后同步做（段 embed + decide <60ms）。
+- 测试：34 通过 skip 0（新增 test_profile_without_diarizer_raises、test_two_seg_picks_main_speaker——两段各半时 embed 只收主段音频）。

@@ -33,7 +33,7 @@ WEB_DIR = ROOT_DIR / "web"
 
 app = FastAPI(title="端侧 ASR 对比 Demo")
 STATE: dict = {"models": {}, "load_errors": {}, "diarizer": None, "diar_error": None, "threads": 2,
-               "save_audio": True, "owner_profile": None, "owner_model": None}
+               "save_audio": True, "owner_profile": None, "owner_model": None, "owner_diarizer": None}
 LOCK = threading.Lock()  # 串行推理，保证各模型耗时互不干扰
 
 
@@ -67,16 +67,19 @@ def load_models(selected: list[str] | None, threads: int):
     else:
         STATE["diar_error"] = "未下载说话人分离模型（python download_models.py 默认会下载）"
 
-    # 声纹主人识别：注册文件存在（data/owner_profile.json，不提交）才启用；没有就是普通模式，无 owner 字段
+    # 声纹主人识别：注册文件存在（data/owner_profile.json，不提交）+ 分角色模型就绪才启用；没有就是普通模式，无 owner 字段
     profile_path = speaker_owner.DEFAULT_PROFILE
-    if profile_path.exists() and emb:
+    if profile_path.exists() and emb and STATE["diarizer"]:
         try:
             STATE["owner_profile"] = speaker_owner.OwnerProfile.load(profile_path)
             STATE["owner_model"] = speaker_owner.load_model(emb["model"])
+            STATE["owner_diarizer"] = STATE["diarizer"]
             print(f"[加载] 主人声纹注册就绪（{len(STATE['owner_profile'])} 条向量）", flush=True)
         except Exception as e:  # noqa: BLE001
             STATE["owner_profile"] = None
             print(f"[加载] 主人声纹注册失败: {e}", flush=True)
+    elif profile_path.exists() and not STATE["diarizer"]:
+        print("[加载] 主人声纹注册文件存在，但分角色模型未就绪——不启用（owner 字段不会出现）", flush=True)
 
     if not STATE["models"]:
         print("\n!!! 没有可用模型。请先运行: python download_models.py\n", flush=True)
@@ -147,6 +150,7 @@ async def ws_live(ws: WebSocket):
             neg_threshold=min(max(float(cfg.get("neg_threshold", 0.5)), 0.1), 0.5),
             lock=LOCK, log_dir=ROOT_DIR / "logs" / "live",
             owner_profile=STATE["owner_profile"], owner_model=STATE["owner_model"],
+            owner_diarizer=STATE.get("owner_diarizer"),
             save_audio=STATE["save_audio"] and cfg.get("save_audio", True) is not False)
         await ws.send_json({"type": "ready", "models": [{"key": k, "name": STATE["models"][k].spec["name"]}
                                                         for k in keys],

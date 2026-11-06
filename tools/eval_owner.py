@@ -255,9 +255,10 @@ def main() -> int:
         lines.append("样本不足，无法计算 EER / FAR-FRR 曲线")
     lines.append("")
 
+    im_arr = np.asarray(impostor)
     if args.shuffle:  # 反向验证：打乱后 FAR 应升到 50% 上下
-        if target and impostor:
-            lines.append(f"**反向验证（--shuffle）**：FAR {np.mean(impostor >= t) * 100:.1f}%（期望 ~50%）")
+        if len(im_arr):
+            lines.append(f"**反向验证（--shuffle）**：FAR {float(np.mean(im_arr >= t)) * 100:.1f}%（期望 ~50%）")
         else:
             lines.append("反向验证：样本不足，无法计算")
     lines.append("")

@@ -9,3 +9,9 @@
 ## 其余
 
 无
+
+## 真人验证集「自己」部分（2026-11-06）
+
+- 陌生人侧已就位：AMI 会议语料 4 位真人 16 句（`data/realval/strangers/`，不提交，已进 .gitignore）。
+- 「自己」卡在需要用户本人录音：`logs/live/` 全部会话经声纹+文字双重核实均为测试音频回放（095129/133259=dialog_2spk 回放 0.878、095207/095430=同一音频两遍、161941=s02_reminder 回放），无一为本人真实语音；麦克风链路已验证可用（probe.wav 8s → VAD → 512 维向量），但有效人声仅 0.9s，不足注册（需 4–6 句、每句 ≥5s）。
+- 待办：用户运行 `PYTHONUTF8=1 .venv/Scripts/python.exe tools/enroll_owner.py --mic` 录 5 句（脚本会保存向量到 data/owner_profile.json，不存音频）；之后补录 3 句做主人测试集，跑 `python tools/eval_owner.py --data data/realval` 出真人验证集 FAR/召回，回填 owner_eval.md。

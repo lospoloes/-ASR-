@@ -26,3 +26,6 @@ logs/
 
 # 声纹注册（生物信息，不提交）
 data/owner_profile.json
+
+# 真人验证集音频（声纹生物信息，不提交）
+data/realval/

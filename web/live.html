@@ -220,7 +220,9 @@ function handle(e){
     if (cell){
       cell.dataset.final = '1';
       const extra = ['emotion', 'event'].filter(k => e[k] && e[k] !== 'Speech' && e[k] !== 'NEUTRAL').map(k => esc(e[k])).join(' ');
-      cell.innerHTML = `<div class="t">${esc(e.text) || '<span class="sub">（空）</span>'}</div>
+      const badge = 'owner' in e ? (e.owner === true ? ' <span class="pill ok">主人</span>'
+        : e.owner === false ? ' <span class="pill warn">陌生人</span>' : ' <span class="pill">未知</span>') : '';
+      cell.innerHTML = `<div class="t">${esc(e.text) || '<span class="sub">（空）</span>'}${badge}</div>
         <div class="kv">延迟 <b>${Math.round(e.latency_ms)} ms</b> · 解码 ${Math.round(e.decode_ms)} ms · RTF ${e.rtf}${extra ? ' · ' + extra : ''}</div>`;
     }
     const s = stats[e.model]; s.n++; s.lat.push(e.latency_ms); s.rtf.push(e.rtf); s.audio += (e.end - e.start); s.dec += e.decode_ms;

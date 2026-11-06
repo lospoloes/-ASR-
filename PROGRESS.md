@@ -52,3 +52,9 @@
 - 端到端（真 ERes2Net + 真 Diarizer）：deniro 测试句 9fb04fdc → [None, True]（两句累积后判 owner）、ad074fb3 → [True]；s07_long（TTS 声）→ False ✅。
 - 耗时：Diariizer 整句 ~1000ms 在转写线程后台跑，不占 ASR 解码（text 事件 decode_ms 不变）；判定在 Diarizer 完成后同步做（段 embed + decide <60ms）。
 - 测试：34 通过 skip 0（新增 test_profile_without_diarizer_raises、test_two_seg_picks_main_speaker——两段各半时 embed 只收主段音频）。
+
+## 反馈修正 3：文档同步（2026-11-06）
+
+- docs/owner-id.md：规则改为累积判定 + 双阈值取值与依据；验证数字补特权档与 --shuffle FAR 52.4%。
+- docs/live-demo.md：owner 字段规则同步（累积、双阈值、前置 Diarizer 模型）。
+- 任务 1 反向验证补全：`--shuffle` FAR 52.4% 已贴进 owner_eval.md（87aee55）。

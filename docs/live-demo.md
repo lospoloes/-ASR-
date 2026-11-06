@@ -293,7 +293,7 @@ python server.py          # 启动后打开 http://127.0.0.1:8000/live（单句�
 | `partial` | `chunk_id, model, kind, rev, piece, piece_start, start, end, text, locked, live, audio, decode_ms, lag_ms` | 临时结果。`kind`：`live`（蹦字，当前这段的最新识别）/ `lock`（这段已锁定，之后不变）。`text` = `locked` + `live`：`locked` 是已锁定各段的文字，`live` 是当前这段的文字。`start` → `end` 是这句已经识别到的范围 |
 | `text` | `chunk_id, model, text, decode_ms, rtf, latency_ms, shown_ms` | 正式结果：整句重新识别。配置了声纹注册时另加 `owner`：`true` 主人 / `false` 陌生人 / `null` 判不了（<3 秒或声纹失败）；`text` 不受影响 |
 
-**③⁺ 声纹主人识别（可选）**：`data/owner_profile.json` 存在且声纹模型已下载时自动启用；`text` 事件多一个 `owner` 字段，页面在正式结果旁显示 主人 / 陌生人 / 未知 徽标。规则：<3 秒句一律 `null`（不认人）；判定音频只取每句前 2.5 秒（长句提速，P90 ≈49ms）；注册音频与 `data/owner_profile.json` 属生物信息，不提交。
+**③⁺ 声纹主人识别（可选）**：`data/owner_profile.json` 存在且声纹模型 + 说话人分离模型都就绪时自动启用；`text` 事件多一个 `owner` 字段，页面在正式结果旁显示 主人 / 陌生人 / 未知 徽标。规则：句内分角色段取主段向量按秒加权跨句累积，攒够 3 秒判一次后清零，攒不够发 `null`；双阈值对话档 0.45 / 特权档 0.55（曲线见 benchmark/results/owner_eval.md）；注册音频与 `data/owner_profile.json` 属生物信息，不提交。详见 [owner-id.md](owner-id.md)。
 
 **④ 文字改了怎么通知下游**：不发增量（diff），每次都发**这一句当前的完整文字**，下游按 `(chunk_id, model)` 整体替换：
 - 同一句、同一模型的 `partial`，`rev` 严格递增，新的整体替换旧的；

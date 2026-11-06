@@ -22,3 +22,9 @@
 
 - 主人 = deniro（1 句全长注册，`data/owner_profile.json` 不提交）；陌生人 = daniel/emma/freeman/halle/jensen/jlaw/leijun/musk/tom/weaver 共 10 人 21 句（未用于调参，阈值 0.41 沿用 Task 0 EER 曲线）。
 - 结果：**FAR 0/21 = 0.0%**（验收 ≤1%）✅；**≥3s 主人召回 3/3 = 100%**（验收 ≥90%）✅。陌生人最高分 daniel 0.363 < 0.41，余量 0.047。
+
+## Task 4：模型对比（2026-11-06）
+
+- 同集合（deniro 注册 + 21 陌生人句）双模型对比：**eres2net 召回 3/3、FAR 0/21；titanet 召回 3/3、FAR 0/21**——不换（切换条件是 EER 低 ≥1pp，两者都满分开无从谈起）。
+- 分离度（注册全长 vs 测试截 2.5s）：eres2net 同人 min 0.302 / 跨人 max 0.512（余量 −0.21，有重叠但 FAR 仍 0）；titanet 同人 min 0.444 / 跨人 max 0.390（余量 +0.054 更稳）。
+- 结论：默认保留 eres2net（zh-cn 场景契合 + 基线数字齐）；titanet 记录在案，若后续中文环境测试需换模型再启用。

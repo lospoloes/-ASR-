@@ -23,3 +23,6 @@ benchmark/vad_results.json
 
 # 持续监听的转写缓存
 logs/
+
+# 声纹注册（生物信息，不提交）
+data/owner_profile.json

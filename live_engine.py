@@ -33,6 +33,8 @@
                   latency_ms = endpoint_wait_ms + decode_ms：该模型【单独部署】时，从说完到出字的延迟
                   shown_ms：本次实际出字用时（两个模型排队跑，后跑的会多等前一个的解码；开了实时出字时，
                   还可能要等手上那次临时识别做完）
+                  owner：配置了声纹注册时才有——true 主人 / false 陌生人 / null 判不了（<3 秒或声纹失败）；
+                  转写内容不受影响
     error         {message}
 
 两个模型拿到的是完全相同的音频，各自独立转写，便于公平对比。
@@ -49,6 +51,7 @@ from pathlib import Path
 import numpy as np
 
 import vad_stream
+import speaker_owner
 
 SR = vad_stream.SR
 WIN = vad_stream.WIN  # silero VAD 按 512 采样（32ms）一帧
@@ -71,7 +74,9 @@ class LiveSession:
     def __init__(self, models: dict, on_event, min_silence: float = 0.5, max_chunk: float = 15.0,
                  pad: float = 0.2, lock: threading.Lock | None = None, log_dir: Path | None = None,
                  save_audio: bool = False, partial_interval: float = 0.0, piece_gap: float = 0.2,
-                 piece_max: float = 8.0, min_speech: float = 0.15, neg_threshold: float = 0.5):
+                 piece_max: float = 8.0, min_speech: float = 0.15, neg_threshold: float = 0.5,
+                 owner_profile: "speaker_owner.OwnerProfile | None" = None,
+                 owner_model=None, owner_threshold: float = speaker_owner.DEFAULT_THRESHOLD):
         """models: {key: AsrModel}，按顺序依次转写；lock：与其他推理共用的锁（保证计时不被抢 CPU）。
 
         min_silence：静音多久算一句说完；max_chunk：一句最长多少秒，到了就硬切（切在最近 2 秒里人声概率最低的地方）。
@@ -96,6 +101,12 @@ class LiveSession:
         self.lock = lock or threading.Lock()
         self.min_speech = min_speech
         self.neg_threshold = neg_threshold
+        # 声纹主人识别：给了注册向量就必须给声纹模型；都没给 = 不判（text 事件无 owner 字段）
+        self.owner_profile = owner_profile
+        self.owner_model = owner_model
+        self.owner_threshold = owner_threshold
+        if owner_profile is not None and owner_model is None:
+            raise ValueError("owner_profile 需要同时给 owner_model（speaker_owner.load_model 的返回值）")
         self.vad = vad_stream.SileroStream(min_silence=min_silence, sentence_max=max_chunk,
                                            piece_gap=piece_gap, piece_max=piece_max,
                                            min_speech=min_speech, neg_threshold=neg_threshold)
@@ -333,6 +344,17 @@ class LiveSession:
                       "decode_ms": round(dec, 1), "rtf": round(dec / 1000 / max(len(audio) / SR, 1e-3), 4),
                       "latency_ms": round(ch["endpoint_wait_ms"] + dec, 1),
                       "shown_ms": round(ch["endpoint_wait_ms"] + (time.perf_counter() - t_chunk) * 1000, 1)}
+                # 声纹主人识别：只加 owner 字段，转写内容不动。判定失败保持 null，不影响转写事件。
+                # 音频截前 2.5 秒送声纹：句越长 embed 越慢（2.5s 时 P90≈47ms，10s 句 P90≈206ms），截断后 3 秒句数足判
+                if self.owner_profile is not None:
+                    ev["owner"] = None
+                    try:
+                        emb = speaker_owner.embed(audio[:int(2.5 * SR)], self.owner_model)
+                        verdict = speaker_owner.decide(self.owner_profile, emb,
+                                                       len(audio) / SR, self.owner_threshold)
+                        ev["owner"] = None if verdict == "unknown" else verdict == "owner"
+                    except Exception:  # noqa: BLE001
+                        pass
                 for k in ("lang", "emotion", "event"):
                     if res.get(k):
                         ev[k] = res[k]

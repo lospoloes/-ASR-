@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import asr_engine  # noqa: E402
+import speaker_owner  # noqa: E402
 from speaker_owner import MIN_SEC, OwnerProfile, decide, score  # noqa: E402
 
 
@@ -66,6 +68,83 @@ class TestOwner(unittest.TestCase):
         """空注册 → unknown。"""
         self.assertEqual(decide(OwnerProfile([]), rand_unit(1), duration_sec=5.0), "unknown")
         self.assertEqual(decide(None, rand_unit(1), duration_sec=5.0), "unknown")
+
+
+class _FakeEmbModel:
+    """假声纹模型：embed 时返回注册向量的固定线性组合，让相似度可控。"""
+
+    def __init__(self, vec: "np.ndarray"):
+        self.vec = vec
+
+    def embed(self, x):
+        return self.vec
+
+
+class TestLiveOwner(unittest.TestCase):
+    """live_engine 接入：text 事件的 owner 字段（不需要真声纹模型，喂真语音+假声纹模型）。"""
+
+    def _sess_events(self, profile_vec, emb_ret, **kw):
+        """profile_vec：注册向量；emb_ret：embed 返回的假向量（speaker_owner.embed 被 mock）。
+        profile_vec 为 None = 不给注册（普通模式）。"""
+        import unittest.mock as mock
+        import live_engine
+        events = []
+        profile = OwnerProfile([profile_vec]) if profile_vec is not None else None
+        model = object() if profile is not None else None   # 占位：embed 已被 mock，不会用到真模型
+        ctx = mock.patch.object(speaker_owner, "embed", lambda x, m: emb_ret) if profile is not None else None
+        sess = live_engine.LiveSession({"r": _Recorder()}, events.append, owner_profile=profile,
+                                       owner_model=model, piece_max=30, **kw)
+        # s07_long(6.46s) 截掉尾部 0.3s 低幅后两遍拼接 → VAD 一段 12.3s（≥ MIN_SEC，判 owner/stranger）
+        root = Path(__file__).resolve().parents[1]
+        b, _ = asr_engine.read_wav((root / "benchmark/testset/s07_long.wav").read_bytes())
+        x = np.concatenate([b[:-4800], b])
+        try:
+            if ctx:
+                ctx.start()
+            for i in range(0, len(x), 1600):
+                sess.accept(x[i:i + 1600])
+            sess.close()
+            sess._worker.join(timeout=10)
+        finally:
+            if ctx:
+                ctx.stop()
+        return [e for e in events if e["type"] == "text"]
+
+    def test_owner_field_present(self):
+        """给了注册+模型：text 事件有 owner 字段且为 bool（假向量=注册向量 → owner=True）。"""
+        v = rand_unit(1)
+        texts = self._sess_events(v, v)
+        self.assertTrue(texts)
+        self.assertTrue(all(isinstance(t["owner"], bool) for t in texts), texts)
+        self.assertTrue(all(t["owner"] for t in texts), texts)
+
+    def test_owner_field_stranger(self):
+        """陌生人向量（正交）→ owner=False。"""
+        texts = self._sess_events(rand_unit(1), rand_unit(999))
+        self.assertTrue(texts)
+        self.assertTrue(all(t["owner"] is False for t in texts), texts)
+
+    def test_no_profile_no_field(self):
+        """没给注册：text 事件没有 owner 字段（普通模式不改动事件）。"""
+        texts = self._sess_events(None, None)
+        self.assertTrue(texts)
+        self.assertFalse(any("owner" in t for t in texts), texts)
+
+    def test_profile_without_model_raises(self):
+        """给了注册不给模型：构造时报错（防止静默不判）。"""
+        import live_engine
+        with self.assertRaises(ValueError):
+            live_engine.LiveSession({"r": _Recorder()}, lambda e: None,
+                                    owner_profile=OwnerProfile([rand_unit(1)]))
+
+
+class _Recorder:
+    """live 测试用假 ASR：立刻返回。"""
+
+    recognizer = None
+
+    def _offline_stream(self, rec, sr, audio):
+        return {"text": "x"}
 
 
 if __name__ == "__main__":

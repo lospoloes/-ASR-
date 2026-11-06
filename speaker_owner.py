@@ -55,3 +55,34 @@ def decide(profile: OwnerProfile | None, emb, duration_sec: float, threshold: fl
     if profile is None or not profile.vectors or duration_sec < MIN_SEC:
         return "unknown"
     return "owner" if score(profile, emb) >= threshold else "stranger"
+
+
+def load_model(model_path: Path | str):
+    """加载声纹模型（ERes2Net），进程内缓存：同一模型只建一次。"""
+    global _MODEL
+    if _MODEL is None or str(_MODEL.model_path) != str(model_path):
+        import sherpa_onnx as so
+
+        cfg = so.SpeakerEmbeddingExtractorConfig(model=str(model_path), num_threads=2)
+        if not cfg.validate():
+            raise RuntimeError(f"声纹模型配置无效: {model_path}")
+        ex = so.SpeakerEmbeddingExtractor(cfg)
+
+        class _M:
+            pass
+        _MODEL = _M()
+        _MODEL.model_path = str(model_path)
+        _MODEL.ex = ex
+    return _MODEL
+
+
+_MODEL = None
+
+
+def embed(x: "np.ndarray", model) -> "np.ndarray":
+    """一条音频 → L2 归一化声纹向量（VAD 切过的正式句本来就是纯人声，这里不再过 VAD）。"""
+    s = model.ex.create_stream()
+    s.accept_waveform(16000, x)
+    s.input_finished()
+    e = np.asarray(model.ex.compute(s), dtype=np.float32)
+    return e / (np.linalg.norm(e) + 1e-9)

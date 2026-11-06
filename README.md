@@ -143,6 +143,15 @@ python speaker_id.py
 
 输出 `benchmark/results/speaker_id.md`：整条识别、1/2/3/5 秒片段的准确率、推荐阈值（等错误率 EER），以及多人拼接音频里"先分角色、再认人"的结果。已做过一轮实验（6 位好莱坞演员 + 雷军），结论见 [docs/speaker-id.md](docs/speaker-id.md)。
 
+### 接进持续监听（主人识别）
+
+注册自己的声音后，持续监听的每条正式结果带 `owner` 字段（true 主人 / false 陌生人 / null 判不了），页面显示徽标：
+
+```bash
+python tools/enroll_owner.py --name 老板 --files 我的录音1.wav 我的录音2.wav   # 存 data/owner_profile.json，不提交
+# 重启 server 即自动启用；规则与验证数字见 [docs/owner-id.md](docs/owner-id.md)
+```
+
 ## 常用参数
 
 ```bash

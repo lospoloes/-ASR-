@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>声纹标注打分</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f5f6f8; color: #222; }
+  header { background: #1a1a2e; color: #fff; padding: 12px 20px; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header a { color: #8ab4ff; margin-left: 16px; font-size: 13px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  .card { background: #fff; border-radius: 10px; padding: 18px; margin-bottom: 16px;
+          box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .drop { border: 2px dashed #b8c0cc; border-radius: 10px; padding: 28px; text-align: center;
+          color: #667; cursor: pointer; transition: .15s; }
+  .drop.over { border-color: #4a7dff; background: #f0f5ff; }
+  .drop small { display: block; margin-top: 6px; color: #99a; }
+  #waveBox { display: none; }
+  canvas { width: 100%; height: 140px; display: block; background: #fafbfd;
+           border: 1px solid #e3e7ee; border-radius: 6px; cursor: crosshair; }
+  .hint { font-size: 12px; color: #889; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border-bottom: 1px solid #eef0f4; padding: 6px 8px; text-align: left; }
+  th { color: #667; font-weight: 600; background: #fafbfd; }
+  .who-owner { color: #0a8a3a; font-weight: 600; }
+  .who-stranger { color: #c22; font-weight: 600; }
+  .who-unknown { color: #888; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .badge.owner { background: #e0f5e9; color: #0a8a3a; }
+  .badge.stranger { background: #fde8e8; color: #c22; }
+  .badge.unknown { background: #eee; color: #888; }
+  button { border: 0; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 13px; }
+  .btn-primary { background: #4a7dff; color: #fff; }
+  .btn-primary:disabled { background: #b8c4e8; cursor: not-allowed; }
+  .btn-del { background: transparent; color: #c66; padding: 2px 8px; }
+  .sel { position: fixed; z-index: 10; background: #fff; border: 1px solid #ccd; border-radius: 8px;
+         box-shadow: 0 4px 16px rgba(0,0,0,.15); padding: 10px; display: none; }
+  .sel button { display: block; width: 100%; margin: 3px 0; background: #f4f6fa; }
+  .sel button:hover { background: #e5eaf5; }
+  #status { font-size: 13px; color: #667; margin-left: 12px; }
+  .meta { font-size: 13px; color: #556; margin: 6px 0 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>声纹标注打分 <a href="/live">← 实时监听</a> <a href="/">首页</a></h1>
+</header>
+<main>
+  <div class="card">
+    <div class="drop" id="drop">拖入音频文件到此处，或点击选择
+      <small>支持 wav / mp3 / m4a 等；logs/live/ 下的会话录音也可以</small>
+      <input type="file" id="file" accept="audio/*" hidden>
+    </div>
+    <div id="waveBox">
+      <div class="meta" id="meta"></div>
+      <canvas id="wave"></canvas>
+      <div class="hint">在波形上<b>按住拖拽</b>框选一段 → 松开后选择说话人（我 / 别人）。再拖一次可继续加段。</div>
+      <div style="margin-top:10px">
+        <button class="btn-primary" id="analyze" disabled>开始识别</button>
+        <button id="clear" style="margin-left:8px">清空标注</button>
+        <span id="status"></span>
+      </div>
+    </div>
+  </div>
+  <div class="card" id="resultCard" style="display:none">
+    <h3 style="margin:0 0 10px">标注段识别结果</h3>
+    <table id="segTable">
+      <thead><tr><th>#</th><th>时间</th><th>标注</th><th>时长</th><th>相似度</th><th>判定</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</main>
+<div class="sel" id="sel">
+  <div style="font-size:12px;color:#889;margin-bottom:6px" id="selTime"></div>
+  <button data-who="我">🟢 我（主人）</button>
+  <button data-who="别人">🔴 别人</button>
+  <button data-who="忽略">⚪ 忽略（不参与判定）</button>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let audioBuf = null, audioData = null, sr = 16000, fileName = '', segs = [];
+let dragStart = null;
+
+$('drop').onclick = () => $('file').click();
+$('file').onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
+$('drop').ondragover = e => { e.preventDefault(); $('drop').classList.add('over'); };
+$('drop').ondragleave = () => $('drop').classList.remove('over');
+$('drop').ondrop = e => {
+  e.preventDefault(); $('drop').classList.remove('over');
+  e.dataTransfer.files[0] && loadFile(e.dataTransfer.files[0]);
+};
+
+async function loadFile(f) {
+  fileName = f.name; segs = []; renderSegs(); $('resultCard').style.display = 'none';
+  $('status').textContent = '解码中…';
+  const bytes = await f.arrayBuffer();
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+  audioBuf = await ctx.decodeAudioData(bytes);
+  sr = audioBuf.sampleRate;
+  // 混到单声道
+  const ch = audioBuf.numberOfChannels, n = audioBuf.length;
+  audioData = new Float32Array(n);
+  for (let c = 0; c < ch; c++) {
+    const d = audioBuf.getChannelData(c);
+    for (let i = 0; i < n; i++) audioData[i] += d[i] / ch;
+  }
+  ctx.close();
+  $('meta').textContent = `${f.name} · ${audioBuf.duration.toFixed(1)}s · ${sr}Hz · ${ch}ch`;
+  $('waveBox').style.display = 'block';
+  drawWave();
+}
+
+function drawWave() {
+  const cv = $('wave'), dpr = window.devicePixelRatio || 1;
+  cv.width = cv.clientWidth * dpr; cv.height = 140 * dpr;
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const W = cv.clientWidth, H = 140, mid = H / 2;
+  g.clearRect(0, 0, W, H);
+  // 波形
+  g.fillStyle = '#7a9ff5';
+  const step = Math.max(1, Math.floor(audioData.length / W));
+  for (let x = 0; x < W; x++) {
+    let lo = 1, hi = -1;
+    const s0 = Math.floor(x * audioData.length / W), s1 = Math.min(audioData.length, s0 + step);
+    for (let i = s0; i < s1; i++) { lo = Math.min(lo, audioData[i]); hi = Math.max(hi, audioData[i]); }
+    if (lo > hi) continue;
+    g.fillRect(x, mid - hi * mid * 0.92, 1, Math.max(1, (hi - lo) * mid * 0.92));
+  }
+  // 已标注段
+  segs.forEach((s, i) => {
+    const x0 = s.start / audioBuf.duration * W, x1 = s.end / audioBuf.duration * W;
+    g.fillStyle = s.who === '我' ? 'rgba(40,180,90,.22)' : s.who === '别人' ? 'rgba(220,60,60,.22)' : 'rgba(150,150,150,.18)';
+    g.fillRect(x0, 0, x1 - x0, H);
+    g.strokeStyle = s.who === '我' ? '#0a8a3a' : s.who === '别人' ? '#c22' : '#999';
+    g.strokeRect(x0, 0.5, x1 - x0, H - 1);
+    g.fillStyle = '#333'; g.font = '11px sans-serif';
+    g.fillText(i + 1, x0 + 3, 12);
+  });
+  // 拖拽中
+  if (dragStart !== null) {
+    const x0 = dragStart / audioBuf.duration * W, x1 = hoverT / audioBuf.duration * W;
+    g.fillStyle = 'rgba(74,125,255,.25)';
+    g.fillRect(Math.min(x0, x1), 0, Math.abs(x1 - x0), H);
+  }
+}
+
+let hoverT = 0;
+const cv = $('wave');
+function canvasT(e) {
+  const r = cv.getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * audioBuf.duration;
+}
+cv.onpointerdown = e => { if (!audioBuf) return; dragStart = canvasT(e); cv.setPointerCapture(e.pointerId); };
+cv.onpointermove = e => { if (dragStart !== null) { hoverT = canvasT(e); drawWave(); } };
+cv.onpointerup = e => {
+  if (dragStart === null) return;
+  const t = canvasT(e), a = Math.min(dragStart, t), b = Math.max(dragStart, t);
+  dragStart = null; drawWave();
+  if (b - a < 0.15) return;   // 太短忽略
+  pendingSeg = { start: a, end: b };
+  $('selTime').textContent = `${a.toFixed(2)}s – ${b.toFixed(2)}s（${(b - a).toFixed(2)}s）`;
+  $('sel').style.display = 'block';
+  $('sel').style.left = Math.min(e.clientX, innerWidth - 200) + 'px';
+  $('sel').style.top = (e.clientY + 8) + 'px';
+};
+let pendingSeg = null;
+document.querySelectorAll('#sel button').forEach(b => b.onclick = () => {
+  if (pendingSeg) { segs.push({ ...pendingSeg, who: b.dataset.who }); pendingSeg = null; }
+  $('sel').style.display = 'none';
+  renderSegs(); drawWave();
+  $('analyze').disabled = !segs.some(s => s.who !== '忽略');
+});
+document.addEventListener('click', e => {
+  if (!$('sel').contains(e.target) && e.target !== cv) { $('sel').style.display = 'none'; pendingSeg = null; }
+});
+
+function renderSegs() {
+  const tb = $('segTable').querySelector('tbody');
+  tb.innerHTML = '';
+  segs.forEach((s, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${i + 1}</td><td>${s.start.toFixed(2)}–${s.end.toFixed(2)}s</td>` +
+      `<td class="who-${s.who === '我' ? 'owner' : s.who === '别人' ? 'stranger' : 'unknown'}">${s.who}</td>` +
+      `<td>${(s.end - s.start).toFixed(2)}s</td><td>—</td><td>—</td>` +
+      `<td><button class="btn-del" data-i="${i}">删</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('.btn-del').forEach(b => b.onclick = () => {
+    segs.splice(+b.dataset.i, 1); renderSegs(); drawWave();
+    $('analyze').disabled = !segs.some(s => s.who !== '忽略');
+  });
+}
+$('clear').onclick = () => { segs = []; renderSegs(); drawWave(); $('analyze').disabled = true; $('resultCard').style.display = 'none'; };
+
+$('analyze').onclick = async () => {
+  const btn = $('analyze'); btn.disabled = true;
+  $('status').textContent = '上传音频并识别…';
+  const wavBytes = await encodeWav(audioData, sr);
+  const url = '/api/label/analyze?segments=' + encodeURIComponent(JSON.stringify(segs));
+  try {
+    const r = await fetch(url, { method: 'POST', body: wavBytes, headers: {'Content-Type': 'application/octet-stream'} });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const d = await r.json();
+    showResults(d);
+    $('status').textContent = `完成：${d.results.length} 段`;
+  } catch (err) {
+    $('status').textContent = '失败：' + err.message;
+  }
+  btn.disabled = false;
+};
+
+function showResults(d) {
+  $('resultCard').style.display = 'block';
+  const tb = $('segTable').querySelector('tbody');
+  tb.innerHTML = '';
+  const names = { owner: '🟢 主人', stranger: '🔴 陌生人', unknown: '⚪ 未知' };
+  d.results.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${i + 1}</td><td>${r.start.toFixed(2)}–${r.end.toFixed(2)}s</td>` +
+      `<td>${r.who}</td><td>${r.dur.toFixed(2)}s</td><td>${r.score.toFixed(3)}</td>` +
+      `<td><span class="badge ${r.verdict}">${names[r.verdict]}</span></td>`;
+    tb.appendChild(tr);
+  });
+}
+
+async function encodeWav(f32, sampleRate) {
+  const n = f32.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); ws(8, 'WAVE'); ws(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); ws(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) { const s = Math.max(-1, Math.min(1, f32[i])); v.setInt16(44 + i * 2, s * 32767, true); }
+  return buf;
+}
+</script>
+</body>
+</html>

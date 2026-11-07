@@ -117,6 +117,11 @@ def live_page():
     return FileResponse(WEB_DIR / "live.html")
 
 
+@app.get("/label")
+def label_page():
+    return FileResponse(WEB_DIR / "label.html")
+
+
 @app.websocket("/ws/live")
 async def ws_live(ws: WebSocket):
     """持续监听：首条消息为 JSON 配置，之后是 16kHz 单声道 Int16 小端二进制音频帧。
@@ -204,8 +209,79 @@ def api_models():
     return {
         "models": [model_info(s) for s in registry.ASR_MODELS],
         "diarization": {"ready": STATE["diarizer"] is not None, "error": STATE["diar_error"]},
+        "owner_ready": _owner_profile() is not None,
         "threads": STATE["threads"],
     }
+
+
+def _owner_profile():
+    """加载主人声纹注册（无注册文件返回 None）。"""
+    try:
+        return speaker_owner.OwnerProfile.load()
+    except Exception:  # noqa: BLE001 — 文件缺失/损坏都按未注册处理
+        return None
+
+
+def _owner_model():
+    """主人声纹模型（未注册或模型缺失返回 None）。"""
+    if STATE.get("owner_model") is None:
+        try:
+            STATE["owner_model"] = speaker_owner.load_model(
+                ROOT / "models" / "speaker-embedding" / "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx")
+        except Exception:  # noqa: BLE001
+            return None
+    return STATE["owner_model"]
+
+
+@app.post("/api/label/analyze")
+async def api_label_analyze(request: Request):
+    """人工标注分段 → 每段声纹判定（网页标注打分工具用）。
+
+    请求：body=音频 wav 裸数据，query segments=[{"start":1.0,"end":3.5,"who":"我"},...]（URL 编码的 JSON）
+    返回：{"duration": 总时长, "results": [{start, end, who, dur, score, verdict}, ...]}
+    """
+    try:
+        segs = json.loads(request.query_params.get("segments") or "[]")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"segments 不是合法 JSON: {e}") from e
+    if not segs:
+        raise HTTPException(400, "没有标注段")
+    data = await request.body()
+    if not data:
+        raise HTTPException(400, "没有音频文件")
+
+    prof = _owner_profile()
+    model = _owner_model()
+    if prof is None or model is None:
+        raise HTTPException(400, "声纹未就绪：先跑 tools/enroll_owner.py --mic 注册，再重启 server")
+
+    try:
+        x, sr = asr_engine.read_wav(data)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"无法解析 WAV: {e}") from e
+    if sr != asr_engine.SAMPLE_RATE:
+        x = asr_engine.resample(x, sr, asr_engine.SAMPLE_RATE)
+    total = len(x) / asr_engine.SAMPLE_RATE
+
+    out = []
+    for s in sorted(segs, key=lambda v: float(v.get("start", 0))):
+        a, b = float(s.get("start", 0)), float(s.get("end", 0))
+        b = min(b, total)
+        dur = b - a
+        if dur <= 0.05:
+            continue
+        clip = x[int(a * asr_engine.SAMPLE_RATE):int(b * asr_engine.SAMPLE_RATE)]
+        if not len(clip):
+            continue
+        emb = speaker_owner.embed(clip, model)
+        score = speaker_owner.score(prof, emb)
+        # 判定口径与 speaker_owner.decide 一致：<3s unknown；≥3s 按阈值二分
+        verdict = "unknown" if dur < speaker_owner.MIN_SEC else \
+                  ("owner" if score >= speaker_owner.DIALOG_THRESHOLD else "stranger")
+        out.append({"start": round(a, 2), "end": round(b, 2), "who": str(s.get("who", "")),
+                    "dur": round(dur, 2), "score": round(score, 3), "verdict": verdict})
+    return JSONResponse({"duration": round(total, 2), "results": out,
+                         "threshold": speaker_owner.DIALOG_THRESHOLD, "min_sec": speaker_owner.MIN_SEC})
 
 
 def _diar_asr_model():

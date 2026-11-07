@@ -59,10 +59,10 @@ def speech_only(x):
 
 def embed(emb, x):
     """提取一条 L2 归一化声纹向量。"""
-    s = emb.ex.create_stream()
+    s = emb.create_stream()
     s.accept_waveform(16000, x)
     s.input_finished()
-    e = np.asarray(emb.ex.compute(s), dtype=np.float32)
+    e = np.asarray(emb.compute(s), dtype=np.float32)
     return e / (np.linalg.norm(e) + 1e-9)
 
 
